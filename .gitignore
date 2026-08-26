@@ -1,0 +1,32 @@
+# Terraform State & Secrets
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!.tfvars.example
+.terraform.lock.hcl
+
+# Python / Virtualenvs
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+env/
+venv/
+ENV/
+*.egg-info/
+
+# Environment Variables & Secrets
+.env
+.env.*
+*.pem
+*.p8
+*.key
+secrets.json
+
+# IDE & System
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.log

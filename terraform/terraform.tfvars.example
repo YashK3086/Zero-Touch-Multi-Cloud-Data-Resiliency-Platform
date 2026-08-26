@@ -1,0 +1,25 @@
+# ==========================================
+# TERRAFORM VARIABLES TEMPLATE (EXAMPLE)
+# ==========================================
+
+# General Configuration
+environment                 = "drdemo"
+aws_region                  = "us-east-1"
+azure_location              = "East US"
+
+# Snowflake Credentials & Accounts
+snowflake_primary_account   = "myorg-aws_primary"
+snowflake_secondary_account = "myorg-azure_secondary"
+snowflake_user              = "DR_CONTROLLER_USER"
+snowflake_password          = "YourSecurePassword123!"
+snowflake_role              = "ACCOUNTADMIN"
+
+# AWS Credentials
+aws_access_key_id           = "YOUR_AWS_ACCESS_KEY"
+aws_secret_access_key       = "YOUR_AWS_SECRET_KEY"
+
+# Azure Credentials
+azure_subscription_id       = "00000000-0000-0000-0000-000000000000"
+azure_tenant_id             = "00000000-0000-0000-0000-000000000000"
+azure_client_id             = "00000000-0000-0000-0000-000000000000"
+azure_client_secret         = "YOUR_AZURE_CLIENT_SECRET"
