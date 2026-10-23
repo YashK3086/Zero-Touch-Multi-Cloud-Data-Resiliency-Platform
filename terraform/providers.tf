@@ -1,0 +1,42 @@
+# ============================================================
+# Provider Configuration
+# ============================================================
+# Cloud credentials are NOT passed as Terraform variables. They are read from
+# standard environment variables, loaded locally via `scripts/Load-Env.ps1`
+# and injected by GitHub Actions secrets / OIDC in CI:
+#   AWS   -> AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY (or OIDC role)
+#   Azure -> ARM_SUBSCRIPTION_ID, ARM_TENANT_ID, ARM_CLIENT_ID, ARM_CLIENT_SECRET
+#   Snowflake -> TF_VAR_snowflake_* (sensitive variables below)
+
+provider "aws" {
+  region = var.aws_region
+
+  default_tags {
+    tags = local.common_tags
+  }
+}
+
+provider "azurerm" {
+  features {
+    resource_group {
+      # Demo environment: allow clean `terraform destroy` to save credits.
+      prevent_deletion_if_contains_resources = false
+    }
+  }
+
+  # Service principal has Contributor only; providers were registered manually.
+  resource_provider_registrations = "none"
+}
+
+# Primary Snowflake account (AWS). Secondary (Azure) alias is added in Phase 2.
+provider "snowflake" {
+  organization_name = local.sf_primary.organization
+  account_name      = local.sf_primary.account
+  user              = var.snowflake_user
+  role              = var.snowflake_role
+
+  # Key-pair (JWT) auth is preferred; falls back to password when no key is set.
+  authenticator = var.snowflake_private_key_path != "" ? "SNOWFLAKE_JWT" : null
+  private_key   = var.snowflake_private_key_path != "" ? file(var.snowflake_private_key_path) : null
+  password      = var.snowflake_private_key_path == "" ? var.snowflake_password : null
+}

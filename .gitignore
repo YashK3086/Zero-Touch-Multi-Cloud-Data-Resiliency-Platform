@@ -3,8 +3,13 @@
 *.tfstate
 *.tfstate.*
 *.tfvars
-!.tfvars.example
+!*.tfvars.example
+backend.hcl
 .terraform.lock.hcl
+!terraform/.terraform.lock.hcl
+!terraform/bootstrap/.terraform.lock.hcl
+*.tfplan
+tfplan
 
 # Python / Virtualenvs
 __pycache__/
@@ -15,14 +20,23 @@ env/
 venv/
 ENV/
 *.egg-info/
+.pytest_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
 
 # Environment Variables & Secrets
 .env
 .env.*
+!.env.example
 *.pem
 *.p8
 *.key
 secrets.json
+
+# Benchmark / chaos run artifacts
+reports/*.json
 
 # IDE & System
 .vscode/

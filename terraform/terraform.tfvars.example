@@ -1,25 +1,17 @@
 # ==========================================
 # TERRAFORM VARIABLES TEMPLATE (EXAMPLE)
 # ==========================================
+# Non-secret values only. Credentials are loaded from ../.env into the
+# process environment by `scripts/Load-Env.ps1`:
+#   AWS_*  -> AWS provider,  AZURE_* -> ARM_* (azurerm),
+#   SNOWFLAKE_USER / SNOWFLAKE_PASSWORD -> TF_VAR_snowflake_user / TF_VAR_snowflake_password
 
-# General Configuration
-environment                 = "drdemo"
-aws_region                  = "us-east-1"
-azure_location              = "East US"
+environment    = "drdemo"
+aws_region     = "us-east-1"
+azure_location = "East US"
 
-# Snowflake Credentials & Accounts
-snowflake_primary_account   = "myorg-aws_primary"
-snowflake_secondary_account = "myorg-azure_secondary"
-snowflake_user              = "DR_CONTROLLER_USER"
-snowflake_password          = "YourSecurePassword123!"
+snowflake_primary_account   = "MYORG-AWS_PRIMARY"
+snowflake_secondary_account = "MYORG-AZURE_SECONDARY"
 snowflake_role              = "ACCOUNTADMIN"
 
-# AWS Credentials
-aws_access_key_id           = "YOUR_AWS_ACCESS_KEY"
-aws_secret_access_key       = "YOUR_AWS_SECRET_KEY"
-
-# Azure Credentials
-azure_subscription_id       = "00000000-0000-0000-0000-000000000000"
-azure_tenant_id             = "00000000-0000-0000-0000-000000000000"
-azure_client_id             = "00000000-0000-0000-0000-000000000000"
-azure_client_secret         = "YOUR_AZURE_CLIENT_SECRET"
+snowflake_monthly_credit_quota = 10

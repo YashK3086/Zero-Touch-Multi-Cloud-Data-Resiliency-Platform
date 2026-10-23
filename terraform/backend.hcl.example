@@ -1,0 +1,6 @@
+# Copy to backend.hcl (gitignored). Bucket name is printed by `terraform/bootstrap` outputs.
+bucket       = "sf-dr-tfstate-<aws_account_id>"
+key          = "sf-dr/core/terraform.tfstate"
+region       = "us-east-1"
+encrypt      = true
+use_lockfile = true

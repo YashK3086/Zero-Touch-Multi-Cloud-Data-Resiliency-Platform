@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sf-dr-controller"
+version = "0.2.0"
+description = "Zero-touch Snowflake multi-cloud (AWS -> Azure) DR health & failover controller"
+requires-python = ">=3.10"
+dependencies = [
+    "snowflake-connector-python>=3.12",
+    "pydantic>=2.6",
+    "pydantic-settings>=2.2",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "pytest-cov>=5", "ruff>=0.6"]
+
+[project.scripts]
+sf-dr-controller = "sf_dr_controller.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q --cov=sf_dr_controller --cov-report=term-missing"
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "S", "BLE"]
+ignore = ["S101"]           # asserts are fine in tests
+
+[tool.ruff.lint.per-file-ignores]
+"src/sf_dr_controller/sql.py" = ["S608"]   # identifiers are regex-validated before interpolation
+"src/sf_dr_controller/health.py" = ["BLE001"]
+"src/sf_dr_controller/failover.py" = ["BLE001"]
+"tests/*" = ["S105", "S106"]                # fake credentials in fixtures

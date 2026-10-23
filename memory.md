@@ -43,7 +43,10 @@
 ---
 
 ## 4. Environment Variables & Credentials Schema
-The following secrets are required in local `.env` and GitHub Secrets:
+The following secrets are required in local `.env` and GitHub Secrets.
+Full template: `.env.example`. Load locally with `. .\scripts\Load-Env.ps1`, which maps
+`AZURE_*` -> `ARM_*` (azurerm) and `SNOWFLAKE_*` -> `TF_VAR_snowflake_*` (Terraform).
+`terraform.tfvars` now holds **non-secret values only**.
 
 ```bash
 # Snowflake Credentials (AWS Primary & Azure Secondary)
@@ -76,9 +79,9 @@ AZURE_STORAGE_CONTAINER="sf-dr-secondary-stage"
 ## 5. Cloud Cost & Credit Balance Tracker
 | Platform | Plan / Tier | Allocated Budget | Used to Date | Current Balance | Status |
 |---|---|---|---|---|---|
-| **Snowflake** | 30-Day Business Critical Trial | $400.00 Credits | $0.00 | $400.00 | 🟢 Healthy |
+| **Snowflake** | Trial EXPIRED -> converting to On-Demand (billing added) | Capped by `DR_CREDIT_GUARD` (10 credits/mo) | $0.00 | n/a | 🟡 Recovering |
 | **AWS** | Free Tier | $0.00 (Free Tier) | $0.00 | $0.00 | 🟢 Healthy |
-| **Azure** | Free Account | $200.00 Credits | $0.00 | $200.00 | 🟢 Healthy |
+| **Azure** | Free Account expired -> upgrading to Pay-As-You-Go | Pay-per-use (cents) | $0.00 | n/a | 🟡 Recovering |
 | **GitHub Actions** | Public Repo Free | 2,000 Mins/mo | 0 Mins | 2,000 Mins | 🟢 Healthy |
 
 ---
@@ -91,10 +94,27 @@ AZURE_STORAGE_CONTAINER="sf-dr-secondary-stage"
 | Timeline | Phase & Milestone | Deliverables & Focus | Trial Credit Plan | Status |
 |---|---|---|---|---|
 | **Days 1–3** | **Phase 0**: Architecture & Repo Setup | Repo layout, `memory.md`, ADRs, IaC scaffolding | $0 (Local/IaC) | 🟢 **COMPLETED** |
-| **Days 4–9 (Week 1)** | **Phase 1**: Multi-Cloud Storage & Compute | AWS S3, Azure Blob, Snowflake DB/WH/Schema via Terraform | $0 (Free Tiers) | 🟢 **COMPLETED** |
-| **Days 10–18 (Week 2)** | **Phase 2**: Multi-Cloud Replication & Redirect | Provision AWS + Azure Snowflake external stages, Failover Group, Client Redirect URL | ~$10–$20 Credits | ⏳ Next Up |
-| **Days 19–26 (Week 3)** | **Phase 3**: Python Health Controller | `sf_dr_controller.py`, async health probes, failover execution logic | ~$5–$10 Credits | 📅 Planned |
+| **Days 4–9 (Week 1)** | **Phase 1**: Multi-Cloud Storage & Compute | AWS S3, Azure Blob, Snowflake DB/WH/Schema via Terraform | $0 (Free Tiers) | 🟡 **CODE REFACTORED, RE-APPLY PENDING** (destroyed 2026-08-26) |
+| **Days 10–18 (Week 2)** | **Phase 2**: Multi-Cloud Replication & Redirect | Provision AWS + Azure Snowflake external stages, Failover Group, Client Redirect URL | ~$10–$20 Credits | ⏳ Next Up (blocked on account recovery) |
+| **Days 19–26 (Week 3)** | **Phase 3**: Python Health Controller | `sf_dr_controller` package: probes, state machine, failover/failback, CLI, tests | ~$5–$10 Credits | 🟡 **CODE DONE (unit-tested)**, live validation pending |
 | **Days 27–33 (Week 4)** | **Phase 4**: Chaos Testing & Failover Audit | `inject_simulated_outage.py`, live RTO/RPO benchmarking (<2 min RTO), Failback | ~$15–$25 Credits | 📅 Planned |
 | **Days 34–40 (Week 5-6)** | **Phase 5**: DevSecOps & Portfolio Deliverables | GitHub Actions CI/CD, OPA/tfsec/ZAP scanning, video demo script | $0 (CI/CD Free) | 📅 Planned |
+
+---
+
+## 7. Live Account Status (last checked 2026-10-23 19:20 IST)
+| Account | Identifier | Status | Action |
+|---|---|---|---|
+| AWS | `621236283472` (`admin_user`) | 🟢 Active | Rotate access key (exposed in agent log 2026-10-23) |
+| Azure | sub `5447fc2b-…` | 🔴 SP sees 0 subscriptions | Upgrade to PAYG, re-grant SP Contributor, rotate SP secret |
+| Snowflake Primary (AWS) | `NNFCDXY-OZ10928` | 🔴 Trial ended (390913) | Add billing in Snowsight |
+| Snowflake Secondary (Azure) | `NNFCDXY-SF_AZURE_SECONDARY` | 🔴 Bad credentials (390100); same org ✅ | Recover admin login or recreate via ORGADMIN |
+
+---
+
+## 8. Changelog
+- **2026-10-23** — Audit: all Phase 1 resources found destroyed (state empty since 2026-08-26). Snowflake trial and Azure free sub expired.
+- **2026-10-23** — Refactor: `main.tf` split into `versions/providers/locals/aws_storage/azure_storage/snowflake_core.tf`; providers upgraded (aws ~>6, azurerm ~>5, snowflakedb/snowflake ~>2.22); S3 remote backend + `terraform/bootstrap`; `DR_CREDIT_GUARD` resource monitor; S3/Azure hardening (public-access block, SSE, TLS1.2, 1-day lifecycle on both clouds); credentials moved out of tfvars to env vars.
+- **2026-10-23** — Controller: implemented `sf_dr_controller` (config, sql, connection, health, state, failover, CLI, JSON logging) + pytest suite.
 
 
