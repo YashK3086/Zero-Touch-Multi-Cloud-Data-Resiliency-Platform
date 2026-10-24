@@ -1,0 +1,17 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY pyproject.toml .
+RUN pip install --no-cache-dir boto3
+
+COPY scripts/mock_stream_producer.py /app/
+
+ENV PYTHONUNBUFFERED=1
+
+ENTRYPOINT ["python", "mock_stream_producer.py"]
+CMD ["--rate", "50", "--interval", "2"]

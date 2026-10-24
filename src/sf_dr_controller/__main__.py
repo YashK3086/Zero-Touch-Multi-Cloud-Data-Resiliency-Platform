@@ -34,6 +34,12 @@ def _parser() -> argparse.ArgumentParser:
     r.add_argument("--dry-run", action="store_true")
     r.add_argument("--max-ticks", type=int, default=None)
 
+    d = sub.add_parser("daemon", help="autonomous watchdog sentry daemon mode")
+    d.add_argument("--interval", type=float, default=10.0, help="heartbeat probe interval in seconds (default: 10)")
+    d.add_argument("--strikes", type=int, default=3, help="consecutive failures before failover (default: 3)")
+    d.add_argument("--dry-run", action="store_true")
+    d.add_argument("--max-ticks", type=int, default=None)
+
     for name in ("failover", "failback"):
         f = sub.add_parser(name)
         f.add_argument("--dry-run", action="store_true")
@@ -60,7 +66,12 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(out, indent=2))
         return 0 if p.healthy and s.healthy else 1
 
-    if args.command == "run":
+    if args.command in ("run", "daemon"):
+        if args.command == "daemon":
+            if getattr(args, "interval", None) is not None:
+                settings.dr_probe_interval_seconds = args.interval
+            if getattr(args, "strikes", None) is not None:
+                settings.dr_failure_threshold = args.strikes
         SnowflakeDRController(settings, runner).run_forever(max_ticks=args.max_ticks)
         return 0
 

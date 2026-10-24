@@ -1,0 +1,76 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sf-dr-dashboard
+  labels:
+    app.kubernetes.io/name: sf-dr-dashboard
+    app.kubernetes.io/component: web-ui
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: sf-dr-dashboard
+  template:
+    metadata:
+      labels:
+        app: sf-dr-dashboard
+    spec:
+      containers:
+        - name: dashboard
+          image: sf-dr-dashboard:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8501
+              name: http
+          envFrom:
+            - configMapRef:
+                name: sf-dr-config
+            - secretRef:
+                name: sf-dr-secret
+          env:
+            - name: SNOWFLAKE_PRIVATE_KEY_PATH
+              value: "/etc/snowflake/rsa_key.p8"
+          livenessProbe:
+            httpGet:
+              path: /_stcore/health
+              port: 8501
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /_stcore/health
+              port: 8501
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 150m
+              memory: 256Mi
+            limits:
+              cpu: 1000m
+              memory: 1Gi
+          volumeMounts:
+            - name: rsa-key-volume
+              mountPath: "/etc/snowflake"
+              readOnly: true
+      volumes:
+        - name: rsa-key-volume
+          secret:
+            secretName: sf-dr-rsa-key
+            defaultMode: 0400
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: sf-dr-dashboard-service
+  labels:
+    app.kubernetes.io/name: sf-dr-dashboard
+spec:
+  type: ClusterIP
+  ports:
+    - port: 80
+      targetPort: 8501
+      protocol: TCP
+      name: http
+  selector:
+    app: sf-dr-dashboard

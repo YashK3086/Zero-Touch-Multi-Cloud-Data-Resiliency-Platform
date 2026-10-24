@@ -57,6 +57,7 @@ class Settings(BaseSettings):
     dr_max_replication_lag_seconds: int = Field(default=300, ge=0)
     dr_auto_failover: bool = True
     dr_dry_run: bool = False
+    dr_webhook_url: str | None = None
 
     @field_validator(
         "snowflake_failover_group_name",

@@ -39,4 +39,5 @@ ignore = ["S101"]           # asserts are fine in tests
 "src/sf_dr_controller/sql.py" = ["S608"]   # identifiers are regex-validated before interpolation
 "src/sf_dr_controller/health.py" = ["BLE001"]
 "src/sf_dr_controller/failover.py" = ["BLE001"]
+"src/sf_dr_controller/notifications.py" = ["S310"]  # user-configured webhook endpoint URL
 "tests/*" = ["S105", "S106"]                # fake credentials in fixtures

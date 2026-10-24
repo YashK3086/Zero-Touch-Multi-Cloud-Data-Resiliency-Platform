@@ -1,0 +1,19 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY pyproject.toml .
+RUN pip install --no-cache-dir .
+
+COPY src/ /app/src/
+
+ENV PYTHONUNBUFFERED=1
+
+ENTRYPOINT ["sf-dr-controller"]
+CMD ["daemon", "--interval", "10", "--strikes", "3"]

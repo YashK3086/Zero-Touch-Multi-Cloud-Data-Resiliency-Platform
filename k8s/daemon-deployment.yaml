@@ -1,0 +1,48 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sf-dr-daemon
+  labels:
+    app.kubernetes.io/name: sf-dr-daemon
+    app.kubernetes.io/component: sentry-controller
+spec:
+  replicas: 1  # Single active watchdog sentry to prevent split-brain failover race conditions
+  selector:
+    matchLabels:
+      app: sf-dr-daemon
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: sf-dr-daemon
+    spec:
+      containers:
+        - name: daemon
+          image: sf-dr-controller:latest
+          imagePullPolicy: IfNotPresent
+          args: ["daemon", "--interval", "10", "--strikes", "3", "--plain-logs"]
+          envFrom:
+            - configMapRef:
+                name: sf-dr-config
+            - secretRef:
+                name: sf-dr-secret
+          env:
+            - name: SNOWFLAKE_PRIVATE_KEY_PATH
+              value: "/etc/snowflake/rsa_key.p8"
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          volumeMounts:
+            - name: rsa-key-volume
+              mountPath: "/etc/snowflake"
+              readOnly: true
+      volumes:
+        - name: rsa-key-volume
+          secret:
+            secretName: sf-dr-rsa-key
+            defaultMode: 0400
