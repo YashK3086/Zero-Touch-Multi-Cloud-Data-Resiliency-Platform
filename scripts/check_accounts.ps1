@@ -36,7 +36,7 @@ if ($LASTEXITCODE -eq 0) {
 # 2. Azure
 Write-Host "`n[2/3] Azure Cloud Health:" -ForegroundColor Yellow
 try {
-    $tok = Invoke-RestMethod -Method Post -Uri "https://login.microsoftonline.com/$($cfg['AZURE_TENANT_ID'])/oauth2/v2.0/token" -Body @{
+    $tok = Invoke-RestMethod -Method Post -Uri "https://login.microsoftonline.com/$($cfg['AZURE_TENANT_ID'])/oauth2/v2.0/token" -TimeoutSec 15 -Body @{
         client_id     = $cfg['AZURE_CLIENT_ID']
         client_secret = $cfg['AZURE_CLIENT_SECRET']
         scope         = 'https://management.azure.com/.default'
@@ -47,12 +47,12 @@ try {
 
     $subId = $cfg['AZURE_SUBSCRIPTION_ID']
     try {
-        $sub = Invoke-RestMethod -Headers $h -Uri "https://management.azure.com/subscriptions/$subId`?api-version=2022-12-01"
+        $sub = Invoke-RestMethod -Headers $h -Uri "https://management.azure.com/subscriptions/$subId`?api-version=2022-12-01" -TimeoutSec 15
         Write-Host "  [OK] Subscription '$($sub.displayName)' (State: $($sub.state))" -ForegroundColor Green
     } catch {
         Write-Host "  [WARN] Subscription $subId not accessible: $($_.Exception.Message)" -ForegroundColor Red
         # List all visible subscriptions for this SP
-        $allSubs = Invoke-RestMethod -Headers $h -Uri "https://management.azure.com/subscriptions?api-version=2022-12-01"
+        $allSubs = Invoke-RestMethod -Headers $h -Uri "https://management.azure.com/subscriptions?api-version=2022-12-01" -TimeoutSec 15
         Write-Host "         Visible subscriptions count: $($allSubs.value.Count)" -ForegroundColor Yellow
         $allSubs.value | ForEach-Object { Write-Host "         - $($_.displayName) ($($_.subscriptionId)) [$($_.state)]" }
     }
@@ -66,7 +66,7 @@ foreach ($k in @('SNOWFLAKE_ACCOUNT_PRIMARY', 'SNOWFLAKE_ACCOUNT_SECONDARY')) {
     $acct = $cfg[$k]
     $label = if ($k -match 'PRIMARY') { 'Primary (AWS)' } else { 'Secondary (Azure)' }
     if (-not $acct) {
-        Write-Host "  [SKIP] $label: Account identifier not configured." -ForegroundColor Gray
+        Write-Host "  [SKIP] ${label}: Account identifier not configured." -ForegroundColor Gray
         continue
     }
 

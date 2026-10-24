@@ -31,11 +31,16 @@ $map = [ordered]@{
     'ARM_CLIENT_SECRET'                     = 'AZURE_CLIENT_SECRET'
     'AWS_DEFAULT_REGION'                    = 'AWS_REGION'
     'TF_VAR_snowflake_user'                 = 'SNOWFLAKE_USER'
-    'TF_VAR_snowflake_password'             = 'SNOWFLAKE_PASSWORD'
     'TF_VAR_snowflake_role'                 = 'SNOWFLAKE_ROLE'
     'TF_VAR_snowflake_primary_account'      = 'SNOWFLAKE_ACCOUNT_PRIMARY'
     'TF_VAR_snowflake_secondary_account'    = 'SNOWFLAKE_ACCOUNT_SECONDARY'
     'TF_VAR_snowflake_private_key_path'     = 'SNOWFLAKE_PRIVATE_KEY_PATH'
+}
+if (-not $cfg.ContainsKey('SNOWFLAKE_PRIVATE_KEY_PATH') -or $cfg['SNOWFLAKE_PRIVATE_KEY_PATH'] -eq '') {
+    $map['TF_VAR_snowflake_password'] = 'SNOWFLAKE_PASSWORD'
+} else {
+    Remove-Item Env:TF_VAR_snowflake_password -ErrorAction SilentlyContinue
+    Remove-Item Env:SNOWFLAKE_PASSWORD -ErrorAction SilentlyContinue
 }
 foreach ($target in $map.Keys) {
     $src = $map[$target]

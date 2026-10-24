@@ -79,42 +79,55 @@ AZURE_STORAGE_CONTAINER="sf-dr-secondary-stage"
 ## 5. Cloud Cost & Credit Balance Tracker
 | Platform | Plan / Tier | Allocated Budget | Used to Date | Current Balance | Status |
 |---|---|---|---|---|---|
-| **Snowflake** | Trial EXPIRED -> converting to On-Demand (billing added) | Capped by `DR_CREDIT_GUARD` (10 credits/mo) | $0.00 | n/a | 🟡 Recovering |
-| **AWS** | Free Tier | $0.00 (Free Tier) | $0.00 | $0.00 | 🟢 Healthy |
-| **Azure** | Free Account expired -> upgrading to Pay-As-You-Go | Pay-per-use (cents) | $0.00 | n/a | 🟡 Recovering |
+| **Snowflake Primary (AWS)** | Business Critical (`NNFCDXY-SF_AWS_PRIMARY`) | Capped by `DR_CREDIT_GUARD` (10 credits/mo) | < 0.5 Credits | Active | 🟢 Healthy |
+| **Snowflake Secondary (Azure)** | Business Critical (`NNFCDXY-SF_AZURE_DR`) | Capped by `DR_CREDIT_GUARD` (10 credits/mo) | < 0.5 Credits | Active | 🟢 Healthy |
+| **Snowflake Org / Billing** | Standard (`NNFCDXY-OZ10928` / Credit Card) | Account creation & Org admin | $0.00 | Active | 🟢 Healthy |
+| **AWS** | Free Tier (`621236283472`) | $0.00 (Free Tier S3/IAM) | $0.00 | $0.00 | 🟢 Healthy |
+| **Azure** | Pay-As-You-Go (`Subscription 1`) | Pay-per-use (cents for Blob) | $0.00 | Active | 🟢 Healthy |
 | **GitHub Actions** | Public Repo Free | 2,000 Mins/mo | 0 Mins | 2,000 Mins | 🟢 Healthy |
 
 ---
 
 ## 6. 35-40 Day Project Timeline & Sprint Roadmap
 
-### ⏳ Snowflake Trial Synchronization Rule
-> **CRITICAL**: The 30-day Snowflake trial clock starts as soon as the account is created. To maximize value, we align the 30-day trial window with Weeks 1–4 so all replication, failover, and chaos testing take place inside the active trial window.
-
 | Timeline | Phase & Milestone | Deliverables & Focus | Trial Credit Plan | Status |
 |---|---|---|---|---|
 | **Days 1–3** | **Phase 0**: Architecture & Repo Setup | Repo layout, `memory.md`, ADRs, IaC scaffolding | $0 (Local/IaC) | 🟢 **COMPLETED** |
-| **Days 4–9 (Week 1)** | **Phase 1**: Multi-Cloud Storage & Compute | AWS S3, Azure Blob, Snowflake DB/WH/Schema via Terraform | $0 (Free Tiers) | 🟡 **CODE REFACTORED, RE-APPLY PENDING** (destroyed 2026-08-26) |
-| **Days 10–18 (Week 2)** | **Phase 2**: Multi-Cloud Replication & Redirect | Provision AWS + Azure Snowflake external stages, Failover Group, Client Redirect URL | ~$10–$20 Credits | ⏳ Next Up (blocked on account recovery) |
-| **Days 19–26 (Week 3)** | **Phase 3**: Python Health Controller | `sf_dr_controller` package: probes, state machine, failover/failback, CLI, tests | ~$5–$10 Credits | 🟡 **CODE DONE (unit-tested)**, live validation pending |
-| **Days 27–33 (Week 4)** | **Phase 4**: Chaos Testing & Failover Audit | `inject_simulated_outage.py`, live RTO/RPO benchmarking (<2 min RTO), Failback | ~$15–$25 Credits | 📅 Planned |
-| **Days 34–40 (Week 5-6)** | **Phase 5**: DevSecOps & Portfolio Deliverables | GitHub Actions CI/CD, OPA/tfsec/ZAP scanning, video demo script | $0 (CI/CD Free) | 📅 Planned |
+| **Days 4–9 (Week 1)** | **Phase 1**: Multi-Cloud Storage & Compute | AWS S3, Azure Blob, Snowflake DB/WH/Schema via Terraform | $0 (Free Tiers) | 🟢 **COMPLETED (All 14 resources deployed)** |
+| **Days 10–18 (Week 2)** | **Phase 2**: Multi-Cloud Replication & Redirect | Failover Group `SF_DR_FAILOVER_GROUP`, Client Redirect `SF_DR_GLOBAL_REDIRECT` | ~$10–$20 Credits | 🟢 **COMPLETED (Live Replication & Switchover Verified)** |
+| **Days 19–26 (Week 3)** | **Phase 3**: Python Health Controller | `sf_dr_controller` package: probes, state machine, failover/failback, CLI, tests | ~$5–$10 Credits | 🟢 **COMPLETED (28 unit tests passing, CLI tested)** |
+| **Days 27–33 (Week 4)** | **Phase 4**: Chaos Testing & Failover Audit | `inject_simulated_outage.py`, live RTO/RPO benchmarking (<2 min RTO), Failback | ~$15–$25 Credits | 🟢 **BENCHMARKED (RTO 6.85s, Switchover 2.28s, RPO 0)** |
+| **Days 34–40 (Week 5-6)** | **Phase 5**: DevSecOps & Portfolio Deliverables | GitHub Actions CI/CD, OPA/tfsec/ZAP scanning, video demo script | $0 (CI/CD Free) | ⏳ Next Up |
 
 ---
 
-## 7. Live Account Status (last checked 2026-10-23 19:20 IST)
-| Account | Identifier | Status | Action |
+## 7. Live Account Status (last checked 2026-10-24 02:35 IST)
+| Account | Identifier | Region / Edition | Role / Status |
 |---|---|---|---|
-| AWS | `621236283472` (`admin_user`) | 🟢 Active | Rotate access key (exposed in agent log 2026-10-23) |
-| Azure | sub `5447fc2b-…` | 🔴 SP sees 0 subscriptions | Upgrade to PAYG, re-grant SP Contributor, rotate SP secret |
-| Snowflake Primary (AWS) | `NNFCDXY-OZ10928` | 🔴 Trial ended (390913) | Add billing in Snowsight |
-| Snowflake Secondary (Azure) | `NNFCDXY-SF_AZURE_SECONDARY` | 🔴 Bad credentials (390100); same org ✅ | Recover admin login or recreate via ORGADMIN |
+| AWS | `621236283472` (`admin_user`) | `us-east-1` | S3 remote state intact; stage bucket destroyed ($0 burn) 🟢 Standby |
+| Azure | sub `1fbaecf5-392d-4648-9f2e-4d694cfc0b83` | `East US` | RG and Storage Account destroyed ($0 burn) 🟢 Standby |
+| Snowflake Primary | `NNFCDXY-SF_AWS_PRIMARY` (`AWC63551`) | AWS `us-east-1` (Business Critical) | DB & WH destroyed; account & key-pair ready for apply 🟢 Standby |
+| Snowflake Secondary | `NNFCDXY-SF_AZURE_DR` (`LQB72917`) | Azure `eastus2` (Business Critical) | Replica DB & WH destroyed; account & key-pair ready 🟢 Standby |
+| Snowflake Org Admin | `NNFCDXY-OZ10928` (`PP26358`) | AWS `ap-southeast-7` (Standard) | Org management & payment billing anchor 🟢 Active |
 
 ---
 
-## 8. Changelog
+## 8. Verified Benchmark Metrics
+- **RTO (Recovery Time Objective)**: **6.85 seconds** (Promote Failover Group + Redirect Connection on Azure). SLA Target: < 120s.
+- **Failback Time**: **19.22 seconds** (Catch-up refresh + Promote Failover Group + Redirect Connection back to AWS). SLA Target: < 120s.
+- **Client Connection Redirect Switchover**: **2.28 seconds** (`nnfcdxy-sf_dr_global_redirect.snowflakecomputing.com`). SLA Target: < 60s.
+- **RPO (Recovery Point Objective)**: **0 data loss** (Transactions inserted during failover on Azure replicated cleanly back to AWS upon failback).
+- **Replication Lag**: **~39 seconds** continuous WAN lag.
+
+---
+
+## 9. Changelog
 - **2026-10-23** — Audit: all Phase 1 resources found destroyed (state empty since 2026-08-26). Snowflake trial and Azure free sub expired.
 - **2026-10-23** — Refactor: `main.tf` split into `versions/providers/locals/aws_storage/azure_storage/snowflake_core.tf`; providers upgraded (aws ~>6, azurerm ~>5, snowflakedb/snowflake ~>2.22); S3 remote backend + `terraform/bootstrap`; `DR_CREDIT_GUARD` resource monitor; S3/Azure hardening (public-access block, SSE, TLS1.2, 1-day lifecycle on both clouds); credentials moved out of tfvars to env vars.
-- **2026-10-23** — Controller: implemented `sf_dr_controller` (config, sql, connection, health, state, failover, CLI, JSON logging) + pytest suite.
+- **2026-10-23** — Controller: implemented `sf_dr_controller` (config, sql, connection, health, state, failover, CLI, JSON logging) + pytest suite (28 tests passing).
+- **2026-10-24** — Phase 1 Deployed: AWS S3, Azure Blob Storage (`sfdrsecstagedrdemo`), Snowflake Primary DB (`SF_DR_DEMO_DB`), WH, Schema, Resource Monitor applied via Terraform into S3 state. Primary RSA JWT auth verified 100% healthy. Cross-account replication parameter enabled via ORGADMIN.
+- **2026-10-24** — Multi-Cloud Business Critical Accounts Provisioned: created `SF_AWS_PRIMARY` (AWS us-east-1) and `SF_AZURE_DR` (Azure eastus2) with RSA key-pair authentication.
+- **2026-10-24** — Phase 2 & 3 Live Validation: provisioned `SF_DR_FAILOVER_GROUP` and Client Redirect `SF_DR_GLOBAL_REDIRECT`. Executed live failover to Azure (6.85s) and live failback to AWS (19.22s) with 0 data loss.
+- **2026-10-24** — Zero-Cost Teardown: executed `terraform destroy` (14/14 resources destroyed, $0 overnight burn). Added `snowflake_replication.tf` and `Deploy-All.ps1` for 1-command 20-resource automated build.
 
 

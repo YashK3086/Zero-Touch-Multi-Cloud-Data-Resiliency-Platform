@@ -10,6 +10,12 @@ locals {
     account      = upper(local.sf_primary_parts[1])
   }
 
+  sf_secondary_parts = regex("^([^-]+)-(.+)$", var.snowflake_secondary_account)
+  sf_secondary = {
+    organization = upper(local.sf_secondary_parts[0])
+    account      = upper(local.sf_secondary_parts[1])
+  }
+
   common_tags = {
     Project     = "Zero-Touch-Multi-Cloud-DR"
     Environment = var.environment

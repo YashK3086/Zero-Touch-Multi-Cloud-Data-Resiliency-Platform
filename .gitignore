@@ -33,7 +33,10 @@ htmlcov/
 *.pem
 *.p8
 *.key
+*.pub
 secrets.json
+schema.json
+scripts/account_history.txt
 
 # Benchmark / chaos run artifacts
 reports/*.json

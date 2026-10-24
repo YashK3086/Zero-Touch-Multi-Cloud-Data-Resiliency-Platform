@@ -1,0 +1,89 @@
+name: CI & DevSecOps Validation
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+permissions:
+  contents: read
+
+jobs:
+  lint-and-test:
+    name: Code Quality & Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install ruff pytest pytest-cov
+          pip install -e .
+
+      - name: Run Ruff Linter
+        run: |
+          ruff check src tests
+
+      - name: Run Pytest Suite with Coverage
+        run: |
+          pytest -v --cov=sf_dr_controller --cov-report=term-missing
+
+  terraform-validate:
+    name: Terraform Quality & Security
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.5"
+
+      - name: Terraform Format Check
+        working-directory: ./terraform
+        run: terraform fmt -check -recursive
+
+      - name: Terraform Init (backend false)
+        working-directory: ./terraform
+        run: terraform init -backend=false
+
+      - name: Terraform Validate
+        working-directory: ./terraform
+        run: terraform validate
+
+  dr-controller-dryrun:
+    name: DR Controller Dry-Run Verification
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Package
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+
+      - name: Test CLI Dry-Run Execution
+        env:
+          SNOWFLAKE_ACCOUNT_PRIMARY: "TEST_ORG-PRIMARY"
+          SNOWFLAKE_ACCOUNT_SECONDARY: "TEST_ORG-SECONDARY"
+          SNOWFLAKE_USER: "TEST_USER"
+          SNOWFLAKE_PASSWORD: "MockPassword123!"
+        run: |
+          sf-dr-controller failover --dry-run --yes
+          sf-dr-controller failback --dry-run --yes

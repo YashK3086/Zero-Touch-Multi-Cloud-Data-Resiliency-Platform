@@ -34,3 +34,28 @@ resource "snowflake_schema" "dr_schema" {
   name     = "DR_STAGING"
   comment  = "Staging schema for external stage objects (AWS S3 + Azure Blob)"
 }
+
+# ============================================================
+# Snowflake — Core Objects on Secondary (Azure)     [SnowflakeAgent]
+# ============================================================
+
+resource "snowflake_resource_monitor" "dr_credit_guard_secondary" {
+  provider     = snowflake.secondary
+  name         = "DR_CREDIT_GUARD"
+  credit_quota = var.snowflake_monthly_credit_quota
+
+  notify_triggers           = [50, 75, 90]
+  suspend_trigger           = 100
+  suspend_immediate_trigger = 110
+}
+
+resource "snowflake_warehouse" "dr_warehouse_secondary" {
+  provider            = snowflake.secondary
+  name                = "DR_CONTROLLER_WH"
+  warehouse_size      = "XSMALL"
+  auto_suspend        = 60
+  auto_resume         = true
+  initially_suspended = true
+  resource_monitor    = snowflake_resource_monitor.dr_credit_guard_secondary.name
+  comment             = "Secondary DR warehouse - auto-suspends after 60s idle"
+}

@@ -28,15 +28,26 @@ provider "azurerm" {
   resource_provider_registrations = "none"
 }
 
-# Primary Snowflake account (AWS). Secondary (Azure) alias is added in Phase 2.
+# Primary Snowflake account (AWS)
 provider "snowflake" {
   organization_name = local.sf_primary.organization
   account_name      = local.sf_primary.account
   user              = var.snowflake_user
   role              = var.snowflake_role
 
-  # Key-pair (JWT) auth is preferred; falls back to password when no key is set.
+  # Key-pair (JWT) auth is used when snowflake_private_key_path is provided.
   authenticator = var.snowflake_private_key_path != "" ? "SNOWFLAKE_JWT" : null
   private_key   = var.snowflake_private_key_path != "" ? file(var.snowflake_private_key_path) : null
-  password      = var.snowflake_private_key_path == "" ? var.snowflake_password : null
+}
+
+# Secondary Snowflake account (Azure)
+provider "snowflake" {
+  alias             = "secondary"
+  organization_name = local.sf_secondary.organization
+  account_name      = local.sf_secondary.account
+  user              = var.snowflake_user
+  role              = var.snowflake_role
+
+  authenticator = var.snowflake_private_key_path != "" ? "SNOWFLAKE_JWT" : null
+  private_key   = var.snowflake_private_key_path != "" ? file(var.snowflake_private_key_path) : null
 }

@@ -64,8 +64,9 @@ def main(argv: list[str] | None = None) -> int:
         SnowflakeDRController(settings, runner).run_forever(max_ticks=args.max_ticks)
         return 0
 
+    failover_runner = SnowflakeSqlRunner(120)
     executor = FailoverExecutor(
-        runner,
+        failover_runner,
         settings.snowflake_failover_group_name,
         settings.snowflake_redirect_connection_name,
         dry_run=settings.dr_dry_run,
