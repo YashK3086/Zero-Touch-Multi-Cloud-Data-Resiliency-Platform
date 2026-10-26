@@ -129,5 +129,21 @@ AZURE_STORAGE_CONTAINER="sf-dr-secondary-stage"
 - **2026-10-24** — Multi-Cloud Business Critical Accounts Provisioned: created `SF_AWS_PRIMARY` (AWS us-east-1) and `SF_AZURE_DR` (Azure eastus2) with RSA key-pair authentication.
 - **2026-10-24** — Phase 2 & 3 Live Validation: provisioned `SF_DR_FAILOVER_GROUP` and Client Redirect `SF_DR_GLOBAL_REDIRECT`. Executed live failover to Azure (6.85s) and live failback to AWS (19.22s) with 0 data loss.
 - **2026-10-24** — Zero-Cost Teardown: executed `terraform destroy` (14/14 resources destroyed, $0 overnight burn). Added `snowflake_replication.tf` and `Deploy-All.ps1` for 1-command 20-resource automated build.
+- **2026-10-25** — PaySim Financial Dataset Pre-Staged: pre-staged 6.36M PaySim dataset into 500,000-row baseline and 10 streaming chunks; verified cryptographic checksum & mathematical $RPO = 0$ cross-cloud verifier.
+- **2026-10-26** — 100% Native Architecture Shift: deleted all mock simulation scripts (`mock_stream_producer.py`); provisioned AWS S3 -> SQS -> Snowpipe auto-ingestion; built enterprise CI/CD pipeline in `.github/workflows/enterprise_dr_pipeline.yml`.
+- **2026-10-26** — Git Push Hook & Auto-Pop UI: implemented `.git/hooks/pre-push` to auto-fetch all remote branches, sync audit logs, and auto-pop the Mission Control Web App with live Git author, SHA, and multi-branch developer tracking table.
+- **2026-10-26** — Error Knowledge Base Established: created `ERROR.md` logging ERR-001 through ERR-006 with detailed root cause analysis and verified solutions.
+
+---
+
+## 10. Operational Protocol & Mandatory Error Logging Rule
+- **Mandatory Error Logging**: Every runtime, provider, or DDL error encountered must be immediately logged into `ERROR.md` following the standard schema:
+  - Incident ID (`ERR-XXX`)
+  - Component (`AWS`, `Azure`, `Snowflake`, `Terraform`, etc.)
+  - Error Name & Raw Stack Trace
+  - Root Cause Analysis (RCA)
+  - Verified Code / Operational Solution
+- **Zero Simulation Mandate**: All pipelines, ingestion stages, databases, and global redirect DNS objects must use 100% native cloud services (AWS S3, Amazon SQS, Snowflake Snowpipe, Snowflake Failover Groups, Snowflake Client Redirect Connection). Only external physical disasters are simulated via chaos drill failure injection.
+- **Multi-Branch Git Sync**: The local pre-push hook ensures all branches and active developer metadata are synchronized before the Mission Control UI surfaces real-time metrics.
 
 
