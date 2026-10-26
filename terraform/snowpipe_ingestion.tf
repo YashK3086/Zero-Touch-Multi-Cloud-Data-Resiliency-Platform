@@ -76,7 +76,7 @@ resource "snowflake_pipe" "dr_financial_pipe" {
   auto_ingest = true
   comment     = "Production Snowpipe auto-ingesting S3 Parquet/CSV files into DR database"
 
-  copy_statement = "COPY INTO SF_DR_DEMO_DB.DR_STAGING.FINANCIAL_TRANSACTIONS FROM @SF_DR_DEMO_DB.DR_STAGING.SF_PRIMARY_S3_STAGE FILE_FORMAT = (TYPE = 'PARQUET')"
+  copy_statement = "COPY INTO SF_DR_DEMO_DB.DR_STAGING.FINANCIAL_TRANSACTIONS FROM @SF_DR_DEMO_DB.DR_STAGING.SF_PRIMARY_S3_STAGE FILE_FORMAT = (TYPE = 'PARQUET') MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE"
   depends_on     = [snowflake_table.dr_financial_table]
 }
 # S3 Event Notification -> Snowflake Snowpipe SQS Channel

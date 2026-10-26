@@ -13,6 +13,7 @@ This living document chronicles all infrastructure, runtime, authentication, and
 | **ERR-003** | Snowflake Snowpipe DDL | `001757 (42601): Table does not exist` | High | **RESOLVED** |
 | **ERR-004** | Snowflake Terraform Provider | `preview_features_enabled (snowflake_table_resource)` | Medium | **RESOLVED** |
 | **ERR-005** | Snowflake Replication Engine | `003909 (55000): Disabling replication to primary account not allowed` | Critical | **RESOLVED** |
+| **ERR-006** | Snowflake Snowpipe Parquet Ingestion | `002019 (0A000): Parquet single-column variant requirement` | High | **RESOLVED** |
 
 ---
 
@@ -103,6 +104,26 @@ This living document chronicles all infrastructure, runtime, authentication, and
     "${local.sf_primary.organization}.${local.sf_primary.account}",
     "${local.sf_secondary.organization}.${local.sf_secondary.account}"
   ]
+  ```
+
+### ERR-006: Snowpipe Parquet Multi-Column Mapping Requirement
+* **Component:** Snowflake Snowpipe / SQL Engine
+* **Error Name:** `002019 (0A000): PARQUET file format can produce one and only one column of type variant`
+* **Raw Error Log:**
+  ```text
+  Error: 002019 (0A000): SQL compilation error:
+  PARQUET file format can produce one and only one column of type variant, object, or array. 
+  Load data into separate columns using the MATCH_BY_COLUMN_NAME copy option or copy with transformation.
+  with snowflake_pipe.dr_financial_pipe, on snowpipe_ingestion.tf line 72
+  ```
+* **Description:** When executing `COPY INTO` with a multi-column target table from a Parquet external stage, Snowflake by default tries to parse the entire row into a single `VARIANT` column unless explicitly instructed how to map columnar Parquet key names to relational table columns.
+* **Solution:**
+  Appended `MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE` to the Snowpipe `copy_statement` in `terraform/snowpipe_ingestion.tf`:
+  ```sql
+  COPY INTO SF_DR_DEMO_DB.DR_STAGING.FINANCIAL_TRANSACTIONS 
+  FROM @SF_DR_DEMO_DB.DR_STAGING.SF_PRIMARY_S3_STAGE 
+  FILE_FORMAT = (TYPE = 'PARQUET') 
+  MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
   ```
 
 ---
