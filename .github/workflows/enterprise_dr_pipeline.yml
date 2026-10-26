@@ -1,0 +1,94 @@
+name: Enterprise Multi-Cloud DR CI/CD Pipeline
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+    inputs:
+      trigger_reason:
+        description: "Reason for manual drill trigger"
+        required: false
+        default: "Manual Operational Verification"
+
+permissions:
+  contents: read
+
+jobs:
+  code-and-policy-validation:
+    name: DevSecOps & Unit Test Suite
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install ruff pytest pytest-cov
+          pip install -e .
+
+      - name: Lint with Ruff
+        run: |
+          ruff check src tests
+
+      - name: Run Test Suite
+        run: |
+          pytest -v --cov=sf_dr_controller --cov-report=term-missing
+
+  terraform-lint-and-validate:
+    name: Terraform Static Analysis & Validation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.5"
+
+      - name: Format Check
+        working-directory: ./terraform
+        run: terraform fmt -check -recursive
+
+      - name: Terraform Init
+        working-directory: ./terraform
+        run: terraform init -backend=false
+
+      - name: Terraform Validate
+        working-directory: ./terraform
+        run: terraform validate
+
+  notify-pipeline-start:
+    name: Dispatch Push Metadata to Slack
+    needs: [code-and-policy-validation, terraform-lint-and-validate]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Notify Slack of Push / Trigger Event
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          AUTHOR: ${{ github.actor }}
+          COMMIT_MSG: ${{ github.event.head_commit.message }}
+          COMMIT_SHA: ${{ github.sha }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          if [ -n "$SLACK_WEBHOOK_URL" ]; then
+            curl -X POST -H 'Content-type: application/json' --data "{
+              \"text\": \"🚀 *Multi-Cloud DR Pipeline Triggered on Git Push*\n*Pushed By:* \`${AUTHOR}\`\n*Branch:* \`${REF_NAME}\`\n*Commit:* \`${COMMIT_SHA:0:7}\` - ${COMMIT_MSG}\",
+              \"attachments\": [{
+                \"color\": \"#38bdf8\",
+                \"fields\": [
+                  {\"title\": \"Actor\", \"value\": \"${AUTHOR}\", \"short\": true},
+                  {\"title\": \"Status\", \"value\": \"Validation Passed • Ready for Live Execution\", \"short\": true}
+                ]
+              }]
+            }" "$SLACK_WEBHOOK_URL"
+          else
+            echo "SLACK_WEBHOOK_URL secret not configured, skipping Slack push event."
+          fi

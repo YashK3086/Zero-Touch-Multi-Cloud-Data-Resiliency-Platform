@@ -42,3 +42,13 @@ output "snowflake_resource_monitor_name" {
   value       = snowflake_resource_monitor.dr_credit_guard.name
   description = "Snowflake resource monitor enforcing the monthly credit cap"
 }
+
+output "snowflake_failover_group_name" {
+  value       = snowflake_failover_group.dr_primary_failover_group.name
+  description = "Snowflake Active Failover Group"
+}
+
+output "snowflake_primary_connection_name" {
+  value       = snowflake_primary_connection.dr_primary_connection.name
+  description = "Snowflake Global Client Redirect Connection handle"
+}

@@ -42,3 +42,13 @@ def replication_lag(database: str, group: str) -> str:
         f"FROM TABLE({db}.INFORMATION_SCHEMA.REPLICATION_GROUP_REFRESH_HISTORY('{grp}')) "
         "WHERE PHASE_NAME = 'COMPLETED' ORDER BY START_TIME DESC LIMIT 1"
     )
+
+
+def show_connection(connection: str) -> str:
+    """Query current primary/replica status and client redirection URL."""
+    return f"SHOW CONNECTIONS LIKE '{validate_identifier(connection)}'"
+
+
+def show_failover_group(group: str) -> str:
+    """Query current primary account and allowed accounts for failover group."""
+    return f"SHOW FAILOVER GROUPS LIKE '{validate_identifier(group)}'"
