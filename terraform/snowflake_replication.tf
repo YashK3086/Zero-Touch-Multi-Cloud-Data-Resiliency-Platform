@@ -7,7 +7,10 @@ resource "snowflake_failover_group" "dr_primary_failover_group" {
   name              = "SF_DR_FAILOVER_GROUP"
   object_types      = ["DATABASES"]
   allowed_databases = [snowflake_database.dr_database.name]
-  allowed_accounts  = ["${local.sf_secondary.organization}.${local.sf_secondary.account}"]
+  allowed_accounts = [
+    "${local.sf_primary.organization}.${local.sf_primary.account}",
+    "${local.sf_secondary.organization}.${local.sf_secondary.account}"
+  ]
 
   replication_schedule {
     interval = 10

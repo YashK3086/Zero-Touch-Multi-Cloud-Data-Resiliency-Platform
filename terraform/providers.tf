@@ -38,7 +38,8 @@ provider "snowflake" {
   preview_features_enabled = [
     "snowflake_failover_group_resource",
     "snowflake_stage_resource",
-    "snowflake_pipe_resource"
+    "snowflake_pipe_resource",
+    "snowflake_table_resource"
   ]
 
   # Key-pair (JWT) auth is used when snowflake_private_key_path is provided.
@@ -55,7 +56,8 @@ provider "snowflake" {
   role              = var.snowflake_role
 
   preview_features_enabled = [
-    "snowflake_failover_group_resource"
+    "snowflake_failover_group_resource",
+    "snowflake_table_resource"
   ]
 
   authenticator = var.snowflake_private_key_path != "" ? "SNOWFLAKE_JWT" : null
