@@ -45,21 +45,8 @@ if (-not $SkipTerraform) {
     Write-Host "[2/5] Skipping Terraform provisioning (SkipTerraform flag set)." -ForegroundColor DarkGray
 }
 
-# 3. Launch Streaming Ingestion Worker (background process)
-Write-Host "[3/5] Starting Continuous Transaction Mock Producer..." -ForegroundColor Green
-$StreamPy = Join-Path $ScriptDir "mock_stream_producer.py"
-$PythonExe = Join-Path $RootDir ".venv\Scripts\python.exe"
-if (-not (Test-Path $PythonExe)) {
-    $PythonExe = "python"
-}
-
-$ProducerArgs = @($StreamPy, "--rate", "25", "--interval", "2")
-if ($DryRun) {
-    $ProducerArgs += "--dry-run"
-}
-
-$ProducerJob = Start-Process -FilePath $PythonExe -ArgumentList $ProducerArgs -PassThru -WindowStyle Minimized
-Write-Host "      ➔ Mock Stream Producer running (PID: $($ProducerJob.Id))" -ForegroundColor Cyan
+# 3. Cloud-Native Snowpipe & SQS Ingestion Ready
+Write-Host "[3/4] Cloud-Native Snowpipe (AWS S3 + SQS Auto-Ingestion) active on Snowflake." -ForegroundColor Green
 
 # 4. Launch Autonomous Watchdog Sentry Daemon
 Write-Host "[4/5] Launching Autonomous Watchdog Daemon (10s interval, 3 strikes)..." -ForegroundColor Green

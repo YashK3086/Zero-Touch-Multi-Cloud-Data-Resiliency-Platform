@@ -52,3 +52,13 @@ output "snowflake_primary_connection_name" {
   value       = snowflake_primary_connection.dr_primary_connection.name
   description = "Snowflake Global Client Redirect Connection handle"
 }
+
+output "snowflake_pipe_name" {
+  value       = snowflake_pipe.dr_financial_pipe.name
+  description = "Production Snowpipe for S3 auto-ingestion"
+}
+
+output "snowflake_pipe_notification_channel" {
+  value       = snowflake_pipe.dr_financial_pipe.notification_channel
+  description = "Amazon SQS notification ARN for S3 event notifications"
+}
