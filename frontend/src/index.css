@@ -1,0 +1,97 @@
+@import "tailwindcss";
+
+@layer base {
+  *,
+  *::before,
+  *::after {
+    font-family: 'Merriweather', Georgia, Cambria, 'Times New Roman', Times, serif !important;
+  }
+
+  body {
+    background-color: #F8FAFC;
+    color: #1E293B;
+    margin: 0;
+    padding: 0;
+    overflow-x: hidden;
+  }
+
+  /* Distinct Typography Hierarchy */
+  h1 {
+    font-size: 1.85rem;
+    line-height: 2.25rem;
+    font-weight: 900;
+    color: #0F172A;
+    letter-spacing: -0.02em;
+  }
+
+  h2 {
+    font-size: 1.35rem;
+    line-height: 1.85rem;
+    font-weight: 700;
+    color: #0F172A;
+    letter-spacing: -0.01em;
+  }
+
+  h3 {
+    font-size: 1.05rem;
+    line-height: 1.5rem;
+    font-weight: 700;
+    color: #1E293B;
+  }
+
+  h4 {
+    font-size: 0.9rem;
+    line-height: 1.35rem;
+    font-weight: 700;
+    color: #334155;
+  }
+
+  p, span, td, th, div {
+    font-size: 0.825rem;
+    line-height: 1.35rem;
+  }
+
+  .tabular-nums {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+/* Custom Enterprise Card & Shadow Tokens */
+.enterprise-card {
+  background-color: #FFFFFF;
+  border: 1px solid #E2E8F0;
+  border-radius: 0.75rem;
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.04), 0 1px 2px 0 rgba(0, 0, 0, 0.02);
+  transition: all 0.15s ease-in-out;
+}
+
+.enterprise-card:hover {
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.07), 0 2px 4px -1px rgba(0, 0, 0, 0.04);
+}
+
+.section-tag {
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: #64748B;
+  text-transform: uppercase;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #F1F5F9;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #CBD5E1;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #94A3B8;
+}

@@ -17,6 +17,7 @@ This living document chronicles all infrastructure, runtime, authentication, and
 | **ERR-007** | GitHub Actions CI / Terraform | `Exit Code 1: Missing Provider Mock Variables & STS Validation in CI` | High | **RESOLVED** |
 | **ERR-008** | GitHub Actions Workflows | `Duplicate Legacy ci.yml Failing with STS 403 on Parallel Push` | Medium | **RESOLVED** |
 | **ERR-009** | Snowflake Identity & Auth | `511503 (23001): Cannot set PASSWORD on users with TYPE=SERVICE` | High | **RESOLVED** |
+| **ERR-010** | SRE Notification Controller | `SLACK_WEBHOOK_URL Not Auto-Loaded into dr_webhook_url` | Medium | **RESOLVED** |
 
 ---
 
@@ -174,6 +175,27 @@ This living document chronicles all infrastructure, runtime, authentication, and
   ALTER USER YASHSNOW20 UNSET TYPE;
   ALTER USER YASHSNOW20 SET PASSWORD = 'Atlas20@200605' MUST_CHANGE_PASSWORD = FALSE;
   ```
+
+---
+
+### ERR-010: SLACK_WEBHOOK_URL Not Automatically Loaded into dr_webhook_url
+* **Component:** `sf_dr_controller.config` / `Pydantic Settings`
+* **Error Name:** `Missing Environment Variable Alias for dr_webhook_url`
+* **Raw Error Log:**
+  ```text
+  Webhook loaded: False
+  logger.debug("Notifications disabled or no webhook URL configured: %s - %s", title, message)
+  ```
+* **Description:** When the user configured `SLACK_WEBHOOK_URL="https://hooks.slack.com/services/..."` into `.env`, the Pydantic Settings class only mapped fields by their uppercase variable name (`DR_WEBHOOK_URL`). As a result, the controller could not find the webhook URL unless `DR_WEBHOOK_URL` was explicitly defined.
+* **Solution:**
+  Updated `src/sf_dr_controller/config.py` using `pydantic.AliasChoices`:
+  ```python
+  dr_webhook_url: str | None = Field(
+      default=None,
+      validation_alias=AliasChoices("DR_WEBHOOK_URL", "SLACK_WEBHOOK_URL"),
+  )
+  ```
+  Verified automatic loading from `.env` and successful webhook dispatches (HTTP 200).
 
 ---
 

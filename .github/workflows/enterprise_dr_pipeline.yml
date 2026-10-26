@@ -77,27 +77,65 @@ jobs:
           TF_VAR_snowflake_secondary_account: "ORG-SECONDARY"
         run: terraform validate
 
-  notify-pipeline-start:
-    name: Dispatch Push Metadata to Slack
-    needs: [code-and-policy-validation, terraform-lint-and-validate]
+  container-and-k8s-validation:
+    name: Docker Build & Kubernetes Linting
     runs-on: ubuntu-latest
     steps:
-      - name: Notify Slack of Push / Trigger Event
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Controller Daemon Image (Dry-Run)
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./docker/Dockerfile.daemon
+          push: false
+          tags: sf-dr-daemon:test
+
+      - name: Build Dashboard Image (Dry-Run)
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./docker/Dockerfile.dashboard
+          push: false
+          tags: sf-dr-dashboard:test
+
+      - name: Validate Kubernetes Manifests
+        run: |
+          kubectl apply --dry-run=client -f k8s/
+
+  notify-pipeline-status:
+    name: Dispatch Pipeline Status to Slack
+    needs: [code-and-policy-validation, terraform-lint-and-validate, container-and-k8s-validation]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Notify Slack of Pipeline Execution Result
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
           AUTHOR: ${{ github.actor }}
           COMMIT_MSG: ${{ github.event.head_commit.message }}
           COMMIT_SHA: ${{ github.sha }}
           REF_NAME: ${{ github.ref_name }}
+          PIPELINE_RESULT: ${{ (needs.code-and-policy-validation.result == 'success' && needs.terraform-lint-and-validate.result == 'success' && needs.container-and-k8s-validation.result == 'success') && 'PASSED' || 'FAILED' }}
         run: |
           if [ -n "$SLACK_WEBHOOK_URL" ]; then
+            COLOR="#2ecc71"
+            STATUS_MSG="All 3 CI Gates Passed (Unit Tests, Terraform IaC, Docker/K8s)"
+            if [ "$PIPELINE_RESULT" != "PASSED" ]; then
+              COLOR="#e74c3c"
+              STATUS_MSG="One or more CI stages failed. Inspect GitHub Actions log."
+            fi
             curl -X POST -H 'Content-type: application/json' --data "{
-              \"text\": \"🚀 *Multi-Cloud DR Pipeline Triggered on Git Push*\n*Pushed By:* \`${AUTHOR}\`\n*Branch:* \`${REF_NAME}\`\n*Commit:* \`${COMMIT_SHA:0:7}\` - ${COMMIT_MSG}\",
+              \"text\": \"🛡️ *Multi-Cloud DR Pipeline - Build ${PIPELINE_RESULT}*\n*Pushed By:* \`${AUTHOR}\`\n*Branch:* \`${REF_NAME}\`\n*Commit:* \`${COMMIT_SHA:0:7}\` - ${COMMIT_MSG}\",
               \"attachments\": [{
-                \"color\": \"#38bdf8\",
+                \"color\": \"${COLOR}\",
                 \"fields\": [
-                  {\"title\": \"Actor\", \"value\": \"${AUTHOR}\", \"short\": true},
-                  {\"title\": \"Status\", \"value\": \"Validation Passed • Ready for Live Execution\", \"short\": true}
+                  {\"title\": \"Status\", \"value\": \"${STATUS_MSG}\", \"short\": true},
+                  {\"title\": \"Actor\", \"value\": \"${AUTHOR}\", \"short\": true}
                 ]
               }]
             }" "$SLACK_WEBHOOK_URL"

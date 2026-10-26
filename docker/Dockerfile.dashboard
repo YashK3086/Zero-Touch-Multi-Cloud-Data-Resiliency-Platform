@@ -5,13 +5,18 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     curl \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd -u 10001 -m -s /bin/bash appuser \
+    && mkdir -p /app/keys \
+    && chown -R appuser:appuser /app
 
 COPY pyproject.toml .
 RUN pip install --no-cache-dir . streamlit plotly pandas requests
 
-COPY src/ /app/src/
-COPY run_dashboard.py /app/
+COPY --chown=appuser:appuser src/ /app/src/
+COPY --chown=appuser:appuser run_dashboard.py /app/
+
+USER appuser
 
 ENV PYTHONUNBUFFERED=1 \
     STREAMLIT_SERVER_PORT=8501 \
@@ -20,7 +25,7 @@ ENV PYTHONUNBUFFERED=1 \
 
 EXPOSE 8501
 
-HEALTHCHECK --interval=15s --timeout=3s --retries=3 \
+HEALTHCHECK --interval=20s --timeout=5s --retries=3 \
   CMD curl -f http://localhost:8501/_stcore/health || exit 1
 
 ENTRYPOINT ["streamlit", "run", "run_dashboard.py"]

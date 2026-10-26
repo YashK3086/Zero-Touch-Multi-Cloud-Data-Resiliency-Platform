@@ -5,7 +5,7 @@ pubkey_text = Path("C:/CSPM_PROJECT/rsa_key.pub").read_text()
 lines = [l.strip() for l in pubkey_text.splitlines() if "KEY" not in l and l.strip()]
 pubkey = "".join(lines)
 
-print("Step 1: Connecting to new secondary account SF_AZURE_DR with password...")
+print("Step 1: Connecting to new secondary account SF_AZURE_DR with password")
 conn = snowflake.connector.connect(
     user="YASHSNOW20",
     password="Atlas20@200605",
