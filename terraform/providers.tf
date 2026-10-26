@@ -35,6 +35,12 @@ provider "snowflake" {
   user              = var.snowflake_user
   role              = var.snowflake_role
 
+  preview_features_enabled = [
+    "snowflake_failover_group_resource",
+    "snowflake_stage_resource",
+    "snowflake_pipe_resource"
+  ]
+
   # Key-pair (JWT) auth is used when snowflake_private_key_path is provided.
   authenticator = var.snowflake_private_key_path != "" ? "SNOWFLAKE_JWT" : null
   private_key   = var.snowflake_private_key_path != "" ? file(var.snowflake_private_key_path) : null
@@ -47,6 +53,10 @@ provider "snowflake" {
   account_name      = local.sf_secondary.account
   user              = var.snowflake_user
   role              = var.snowflake_role
+
+  preview_features_enabled = [
+    "snowflake_failover_group_resource"
+  ]
 
   authenticator = var.snowflake_private_key_path != "" ? "SNOWFLAKE_JWT" : null
   private_key   = var.snowflake_private_key_path != "" ? file(var.snowflake_private_key_path) : null
