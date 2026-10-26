@@ -63,6 +63,18 @@ jobs:
 
       - name: Terraform Validate
         working-directory: ./terraform
+        env:
+          AWS_ACCESS_KEY_ID: "mock_ci_key"
+          AWS_SECRET_ACCESS_KEY: "mock_ci_secret"
+          AWS_REGION: "us-east-1"
+          ARM_SUBSCRIPTION_ID: "00000000-0000-0000-0000-000000000000"
+          ARM_TENANT_ID: "00000000-0000-0000-0000-000000000000"
+          ARM_CLIENT_ID: "00000000-0000-0000-0000-000000000000"
+          ARM_CLIENT_SECRET: "mock_ci_secret"
+          TF_VAR_snowflake_user: "mock_user"
+          TF_VAR_snowflake_role: "ACCOUNTADMIN"
+          TF_VAR_snowflake_primary_account: "ORG-PRIMARY"
+          TF_VAR_snowflake_secondary_account: "ORG-SECONDARY"
         run: terraform validate
 
   notify-pipeline-start:

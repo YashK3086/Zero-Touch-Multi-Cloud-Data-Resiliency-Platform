@@ -14,6 +14,7 @@ This living document chronicles all infrastructure, runtime, authentication, and
 | **ERR-004** | Snowflake Terraform Provider | `preview_features_enabled (snowflake_table_resource)` | Medium | **RESOLVED** |
 | **ERR-005** | Snowflake Replication Engine | `003909 (55000): Disabling replication to primary account not allowed` | Critical | **RESOLVED** |
 | **ERR-006** | Snowflake Snowpipe Parquet Ingestion | `002019 (0A000): Parquet single-column variant requirement` | High | **RESOLVED** |
+| **ERR-007** | GitHub Actions CI / Terraform | `Exit Code 1: Missing Provider Mock Variables & STS Validation in CI` | High | **RESOLVED** |
 
 ---
 
@@ -125,6 +126,20 @@ This living document chronicles all infrastructure, runtime, authentication, and
   FILE_FORMAT = (TYPE = 'PARQUET') 
   MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
   ```
+
+### ERR-007: GitHub Actions CI Runner Missing Provider Credentials on Validate
+* **Component:** GitHub Actions CI / Terraform Validation
+* **Error Name:** `Exit Code 1: Missing Provider Mock Variables & STS Validation in CI`
+* **Raw Error Log:**
+  ```text
+  Error: validating provider credentials: retrieving caller identity from STS: operation error STS: GetCallerIdentity, 
+  https response error StatusCode: 403, api error InvalidClientTokenId: The security token included in the request is invalid.
+  Error: Process completed with exit code 1.
+  ```
+* **Description:** In the GitHub Actions Ubuntu runner, `terraform validate` executes in a clean container without cloud secrets. The AWS Terraform provider by default attempted an STS `GetCallerIdentity` call to retrieve the account ID, which failed and exited with code 1, causing the entire CI workflow to report red.
+* **Solution:**
+  1. Updated `terraform/providers.tf` to set `skip_credentials_validation = true` and `skip_requesting_account_id = true` on the AWS provider.
+  2. In `.github/workflows/enterprise_dr_pipeline.yml`, injected mock CI environment variables (`AWS_ACCESS_KEY_ID`, `ARM_*`, `TF_VAR_snowflake_*`) during the `Terraform Validate` step so that static syntax and configuration analysis passes cleanly without needing live cloud connectivity.
 
 ---
 
