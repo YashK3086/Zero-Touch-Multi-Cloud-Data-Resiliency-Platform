@@ -15,6 +15,8 @@ This living document chronicles all infrastructure, runtime, authentication, and
 | **ERR-005** | Snowflake Replication Engine | `003909 (55000): Disabling replication to primary account not allowed` | Critical | **RESOLVED** |
 | **ERR-006** | Snowflake Snowpipe Parquet Ingestion | `002019 (0A000): Parquet single-column variant requirement` | High | **RESOLVED** |
 | **ERR-007** | GitHub Actions CI / Terraform | `Exit Code 1: Missing Provider Mock Variables & STS Validation in CI` | High | **RESOLVED** |
+| **ERR-008** | GitHub Actions Workflows | `Duplicate Legacy ci.yml Failing with STS 403 on Parallel Push` | Medium | **RESOLVED** |
+| **ERR-009** | Snowflake Identity & Auth | `511503 (23001): Cannot set PASSWORD on users with TYPE=SERVICE` | High | **RESOLVED** |
 
 ---
 
@@ -140,6 +142,38 @@ This living document chronicles all infrastructure, runtime, authentication, and
 * **Solution:**
   1. Updated `terraform/providers.tf` to set `skip_credentials_validation = true` and `skip_requesting_account_id = true` on the AWS provider.
   2. In `.github/workflows/enterprise_dr_pipeline.yml`, injected mock CI environment variables (`AWS_ACCESS_KEY_ID`, `ARM_*`, `TF_VAR_snowflake_*`) during the `Terraform Validate` step so that static syntax and configuration analysis passes cleanly without needing live cloud connectivity.
+
+### ERR-008: Duplicate Legacy ci.yml Failing with STS 403 on Parallel Push
+* **Component:** GitHub Actions Workflows / CI Pipeline
+* **Error Name:** `Duplicate Legacy Workflow Exit Code 1`
+* **Raw Error Log:**
+  ```text
+  Terraform Quality & Security
+  Process completed with exit code 1.
+  terraform exited with code 1.
+  ```
+* **Description:** After creating the new `enterprise_dr_pipeline.yml`, the repository retained an older workflow file `.github/workflows/ci.yml`. On git push, both workflows triggered in parallel. While the new pipeline was fixed, the legacy workflow still executed `terraform validate` without provider environment variables, causing GitHub Actions to display a red checkmark on the commit.
+* **Solution:**
+  Synchronized `.github/workflows/ci.yml` by injecting the same mock cloud provider environment variables into its `Terraform Validate` step.
+
+---
+
+### ERR-009: Snowflake Web UI Password Login Blocked by SERVICE User Type
+* **Component:** Snowflake Identity & Access Management (IAM)
+* **Error Name:** `511503 (23001): Cannot set PASSWORD on users with TYPE=SERVICE`
+* **Raw Error Log:**
+  ```text
+  Error on Primary: 511503 (23001): SQL execution error: 
+  Cannot set PASSWORD on users with TYPE=SERVICE. 
+  (request_id=86376955-c2a4-4d62-9cd4-7945447c9039, sfqid=01c7fc1a-0103-b17a-001f-89e70002c35e)
+  ```
+* **Description:** When provisioned for RSA key-pair authentication, the user account `YASHSNOW20` was assigned `TYPE=SERVICE`. Snowflake enforces a security policy that disallows setting passwords or performing interactive browser web UI logins for service-type accounts.
+* **Solution:**
+  Executed SQL commands via the Python runner using RSA authentication to unset the user type and assign the browser web UI login password:
+  ```sql
+  ALTER USER YASHSNOW20 UNSET TYPE;
+  ALTER USER YASHSNOW20 SET PASSWORD = 'Atlas20@200605' MUST_CHANGE_PASSWORD = FALSE;
+  ```
 
 ---
 

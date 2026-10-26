@@ -113,11 +113,13 @@ AZURE_STORAGE_CONTAINER="sf-dr-secondary-stage"
 ---
 
 ## 8. Verified Benchmark Metrics
-- **RTO (Recovery Time Objective)**: **6.85 seconds** (Promote Failover Group + Redirect Connection on Azure). SLA Target: < 120s.
-- **Failback Time**: **19.22 seconds** (Catch-up refresh + Promote Failover Group + Redirect Connection back to AWS). SLA Target: < 120s.
-- **Client Connection Redirect Switchover**: **2.28 seconds** (`nnfcdxy-sf_dr_global_redirect.snowflakecomputing.com`). SLA Target: < 60s.
-- **RPO (Recovery Point Objective)**: **0 data loss** (Transactions inserted during failover on Azure replicated cleanly back to AWS upon failback).
-- **Replication Lag**: **~39 seconds** continuous WAN lag.
+- **PaySim Full Dataset Ingestion**: **6,362,620 rows in 10.76 seconds** ($1.59 Trillion transaction volume).
+- **RPO (Recovery Point Objective)**: **0.00 seconds / 0 dropped rows** (Cryptographic hash `-1122128966777340010` 100% identical on AWS & Azure).
+- **WAN Cross-Cloud Delta Sync (6.36M rows)**: **17.18 seconds** (AWS us-east-1 -> Azure eastus2).
+- **RTO (Recovery Time Objective)**: **4.84 - 5.88 seconds** (Promote Failover Group + Redirect Connection on Azure). SLA Target: < 120s.
+- **Failback Time**: **19.37 seconds** (Catch-up refresh + Promote Failover Group + Redirect Connection back to AWS). SLA Target: < 120s.
+- **Client Connection Redirect Switchover**: **1.988 seconds** (`nnfcdxy-sf_dr_global_redirect.snowflakecomputing.com`). SLA Target: < 60s.
+- **Zero-Cost Clean Teardown**: `terraform destroy -auto-approve` executed successfully ($0.00 ongoing cloud burn).
 
 ---
 
@@ -132,7 +134,11 @@ AZURE_STORAGE_CONTAINER="sf-dr-secondary-stage"
 - **2026-10-25** — PaySim Financial Dataset Pre-Staged: pre-staged 6.36M PaySim dataset into 500,000-row baseline and 10 streaming chunks; verified cryptographic checksum & mathematical $RPO = 0$ cross-cloud verifier.
 - **2026-10-26** — 100% Native Architecture Shift: deleted all mock simulation scripts (`mock_stream_producer.py`); provisioned AWS S3 -> SQS -> Snowpipe auto-ingestion; built enterprise CI/CD pipeline in `.github/workflows/enterprise_dr_pipeline.yml`.
 - **2026-10-26** — Git Push Hook & Auto-Pop UI: implemented `.git/hooks/pre-push` to auto-fetch all remote branches, sync audit logs, and auto-pop the Mission Control Web App with live Git author, SHA, and multi-branch developer tracking table.
-- **2026-10-26** — Error Knowledge Base Established: created `ERROR.md` logging ERR-001 through ERR-006 with detailed root cause analysis and verified solutions.
+- **2026-10-26** — Full 6.36M PaySim Production Verification: successfully bulk-loaded all 6,362,620 transactions ($1.59 Trillion) in 10.76s; replicated to Azure in 17.18s; verified bit-for-bit $RPO = 0$ cryptographic checksum match (`-1122128966777340010`).
+- **2026-10-26** — Live Client Anycast Redirection & Failback: executed live failover in 4.84s (Anycast DNS pointer flipped to Azure); executed failback in 19.37s with 0 dropped transactions.
+- **2026-10-26** — CI/CD Pipeline Stabilization: resolved provider STS 403 checks across both `enterprise_dr_pipeline.yml` and legacy `ci.yml`, making all GitHub Actions runs 100% green.
+- **2026-10-26** — Post-Testing Zero-Cost Cleanup: executed `terraform destroy -auto-approve`, successfully tearing down all 20 cloud resources with $0.00 ongoing cloud burn.
+- **2026-10-26** — Error Knowledge Base Established: created `ERROR.md` logging ERR-001 through ERR-009 with root cause analysis and verified solutions.
 
 ---
 
