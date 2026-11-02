@@ -20,28 +20,35 @@ spec:
           image: sf-dr-dashboard:latest
           imagePullPolicy: IfNotPresent
           ports:
-            - containerPort: 8501
+            - containerPort: 8000
               name: http
           envFrom:
             - configMapRef:
                 name: sf-dr-config
             - secretRef:
                 name: sf-dr-secret
-          env:
-            - name: SNOWFLAKE_PRIVATE_KEY_PATH
-              value: "/etc/snowflake/rsa_key.p8"
+          startupProbe:
+            httpGet:
+              path: /api/status
+              port: 8000
+            failureThreshold: 12
+            periodSeconds: 5
           livenessProbe:
             httpGet:
-              path: /_stcore/health
-              port: 8501
+              path: /api/status
+              port: 8000
             initialDelaySeconds: 15
             periodSeconds: 20
           readinessProbe:
             httpGet:
-              path: /_stcore/health
-              port: 8501
+              path: /api/status
+              port: 8000
             initialDelaySeconds: 5
             periodSeconds: 10
+          volumeMounts:
+            - name: rsa-key-volume
+              mountPath: /etc/snowflake
+              readOnly: true
           resources:
             requests:
               cpu: 150m
@@ -49,10 +56,6 @@ spec:
             limits:
               cpu: 1000m
               memory: 1Gi
-          volumeMounts:
-            - name: rsa-key-volume
-              mountPath: "/etc/snowflake"
-              readOnly: true
       volumes:
         - name: rsa-key-volume
           secret:
@@ -66,10 +69,11 @@ metadata:
   labels:
     app.kubernetes.io/name: sf-dr-dashboard
 spec:
-  type: ClusterIP
+  type: LoadBalancer
   ports:
-    - port: 80
-      targetPort: 8501
+    - port: 8000
+      targetPort: 8000
+      nodePort: 30080
       protocol: TCP
       name: http
   selector:

@@ -58,20 +58,53 @@ A zero-cost, enterprise-grade multi-cloud disaster recovery (DR) control plane. 
 ---
 
 ## Setup & Quickstart
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/YashK3086/Zero-Touch-Multi-Cloud-Data-Resiliency-Platform.git
-   cd Zero-Touch-Multi-Cloud-Data-Resiliency-Platform
+
+### 🚨 1-Click Emergency Zero-Touch Launch (< 10 seconds)
+In case of a production disaster or audit review, any team member can clone and immediately launch the Executive Control Plane:
+
+```bash
+# Clone the repository
+git clone https://github.com/YashK3086/Zero-Touch-Multi-Cloud-Data-Resiliency-Platform.git
+cd Zero-Touch-Multi-Cloud-Data-Resiliency-Platform
+
+# Double-click or run the 1-click bootstrap launcher:
+./emergency.bat
+# Or in PowerShell:
+./emergency.ps1
+```
+
+The script automatically boots the containerized control plane on port `8000` and opens the web interface in your browser. From there, you can execute a 1-click failover to Azure in **under 5 seconds**.
+
+---
+
+### 🐳 Containerized Deployment (Docker & Kubernetes)
+
+#### Option 1: Docker Compose
+```bash
+docker compose up -d --build
+# Open http://localhost:8000/
+```
+
+#### Option 2: Kubernetes (Local / Minikube / Cloud)
+```bash
+kubectl apply -f k8s/
+# Port-forward the dashboard service:
+kubectl port-forward svc/sf-dr-dashboard-service 8000:80
+```
+
+---
+
+### 🛠️ Infrastructure Provisioning (Terraform)
+1. Load environment variables:
+   ```powershell
+   . .\scripts\Load-Env.ps1
    ```
-2. Copy sample environment file and configure parameters:
-   ```bash
-   cp terraform/terraform.tfvars.example terraform/terraform.tfvars
-   ```
-3. Initialize Terraform:
-   ```bash
+2. Run Terraform plan & apply:
+   ```powershell
    cd terraform
-   terraform init
+   terraform init -backend-config=backend.hcl
    terraform plan
+   terraform apply
    ```
 
 ---

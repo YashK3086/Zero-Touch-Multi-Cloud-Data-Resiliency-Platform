@@ -70,39 +70,48 @@ class Settings(BaseSettings):
     )
     @classmethod
     def _safe_identifier(cls, v: str) -> str:
-        return validate_identifier(v)
+        return validate_identifier(v.strip().strip('"').strip("'"))
 
     @field_validator("snowflake_account_primary", "snowflake_account_secondary")
     @classmethod
     def _account_format(cls, v: str) -> str:
+        v = v.strip().strip('"').strip("'")
         if "-" not in v or v.startswith("<"):
             raise ValueError("Snowflake account must use ORGNAME-ACCOUNTNAME format")
         return v
 
     # --- Derived ------------------------------------------------------------
     def _secret(self, s: SecretStr | None) -> str | None:
-        return s.get_secret_value() if s else None
+        return s.get_secret_value().strip().strip('"').strip("'") if s else None
+
+    def _resolved_key_path(self) -> Path | None:
+        if self.snowflake_private_key_path and self.snowflake_private_key_path.exists():
+            return self.snowflake_private_key_path
+        for fallback in (Path("/app/rsa_key.p8"), Path("/etc/snowflake/rsa_key.p8"), Path("rsa_key.p8")):
+            if fallback.exists():
+                return fallback
+        return self.snowflake_private_key_path
 
     @property
     def primary(self) -> AccountConfig:
         return AccountConfig(
             label="primary",
-            identifier=self.snowflake_account_primary,
-            user=self.snowflake_user,
-            role=self.snowflake_role,
+            identifier=self.snowflake_account_primary.strip().strip('"').strip("'"),
+            user=self.snowflake_user.strip().strip('"').strip("'"),
+            role=self.snowflake_role.strip().strip('"').strip("'"),
             password=self._secret(self.snowflake_password),
-            private_key_path=self.snowflake_private_key_path,
-            warehouse=self.snowflake_warehouse,
+            private_key_path=self._resolved_key_path(),
+            warehouse=self.snowflake_warehouse.strip().strip('"').strip("'"),
         )
 
     @property
     def secondary(self) -> AccountConfig:
         return AccountConfig(
             label="secondary",
-            identifier=self.snowflake_account_secondary,
-            user=self.snowflake_secondary_user or self.snowflake_user,
-            role=self.snowflake_role,
+            identifier=self.snowflake_account_secondary.strip().strip('"').strip("'"),
+            user=(self.snowflake_secondary_user or self.snowflake_user).strip().strip('"').strip("'"),
+            role=self.snowflake_role.strip().strip('"').strip("'"),
             password=self._secret(self.snowflake_secondary_password or self.snowflake_password),
-            private_key_path=self.snowflake_private_key_path,
-            warehouse=self.snowflake_warehouse,
+            private_key_path=self._resolved_key_path(),
+            warehouse=self.snowflake_warehouse.strip().strip('"').strip("'"),
         )

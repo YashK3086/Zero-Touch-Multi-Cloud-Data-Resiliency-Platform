@@ -19,17 +19,34 @@ spec:
     spec:
       containers:
         - name: daemon
-          image: sf-dr-controller:latest
+          image: sf-dr-daemon:latest
           imagePullPolicy: IfNotPresent
-          args: ["daemon", "--interval", "10", "--strikes", "3", "--plain-logs"]
+          args: ["--plain-logs", "daemon", "--interval", "10", "--strikes", "3"]
           envFrom:
             - configMapRef:
                 name: sf-dr-config
             - secretRef:
                 name: sf-dr-secret
-          env:
-            - name: SNOWFLAKE_PRIVATE_KEY_PATH
-              value: "/etc/snowflake/rsa_key.p8"
+          livenessProbe:
+            exec:
+              command:
+                - python
+                - -c
+                - "import sf_dr_controller; print('healthy')"
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          readinessProbe:
+            exec:
+              command:
+                - python
+                - -c
+                - "from sf_dr_controller.config import Settings; s = Settings(); assert s.snowflake_account_primary"
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          volumeMounts:
+            - name: rsa-key-volume
+              mountPath: /etc/snowflake
+              readOnly: true
           resources:
             requests:
               cpu: 100m
@@ -37,10 +54,6 @@ spec:
             limits:
               cpu: 500m
               memory: 512Mi
-          volumeMounts:
-            - name: rsa-key-volume
-              mountPath: "/etc/snowflake"
-              readOnly: true
       volumes:
         - name: rsa-key-volume
           secret:

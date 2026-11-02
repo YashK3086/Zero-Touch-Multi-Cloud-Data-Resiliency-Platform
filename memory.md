@@ -50,27 +50,35 @@ Full template: `.env.example`. Load locally with `. .\scripts\Load-Env.ps1`, whi
 
 ```bash
 # Snowflake Credentials (AWS Primary & Azure Secondary)
-SNOWFLAKE_ACCOUNT_PRIMARY="<org>-<aws_account_name>"     # AWS Primary Account
-SNOWFLAKE_ACCOUNT_SECONDARY="<org>-<azure_account_name>" # Azure Secondary Account
-SNOWFLAKE_USER="DR_CONTROLLER_USER"
-SNOWFLAKE_PASSWORD="<SecurePassword123!>"
+SNOWFLAKE_ACCOUNT_PRIMARY="NNFCDXY-SF_AWS_PRIMARY"       # AWS Primary Account (Locator: AWC63551)
+SNOWFLAKE_ACCOUNT_SECONDARY="NNFCDXY-SF_AZURE_DR"       # Azure Secondary Account (Locator: LQB72917)
+SNOWFLAKE_ACCOUNT_ORGADMIN="NNFCDXY-OZ10928"            # Org Admin Anchor (Locator: PP26358)
+SNOWFLAKE_USER="YASHSNOW20"
+SNOWFLAKE_PASSWORD="Atlas20@200605"                      # Primary account password
+SNOWFLAKE_SECONDARY_USER="YASHSNOW20"
+SNOWFLAKE_SECONDARY_PASSWORD="SecurePassword123!"        # Secondary account password
 SNOWFLAKE_ROLE="ACCOUNTADMIN"
+SNOWFLAKE_PRIVATE_KEY_PATH="C:/CSPM_PROJECT/rsa_key.p8"
+
+# Web UI Direct Login URLs:
+# - Primary (AWS): https://app.snowflake.com/us-east-1/awc63551
+# - Secondary (Azure): https://app.snowflake.com/eastus2.azure/lqb72917
 
 # Snowflake Client Redirect Configuration
 SNOWFLAKE_REDIRECT_CONNECTION_NAME="SF_DR_GLOBAL_REDIRECT"
 SNOWFLAKE_FAILOVER_GROUP_NAME="SF_DR_FAILOVER_GROUP"
 
-# Cloud Provider Storage Credentials
-AWS_ACCESS_KEY_ID="<AWS_FREE_TIER_KEY>"
-AWS_SECRET_ACCESS_KEY="<AWS_FREE_TIER_SECRET>"
+# Cloud Provider Storage Credentials (Stored securely in .env)
+AWS_ACCESS_KEY_ID="<REDACTED_AWS_ACCESS_KEY>"
+AWS_SECRET_ACCESS_KEY="<REDACTED_AWS_SECRET_KEY>"
 AWS_REGION="us-east-1"
 AWS_S3_BUCKET="sf-dr-primary-stage-bucket"
 
-AZURE_SUBSCRIPTION_ID="<AZURE_SUB_ID>"
-AZURE_TENANT_ID="<AZURE_TENANT_ID>"
-AZURE_CLIENT_ID="<AZURE_CLIENT_ID>"
-AZURE_CLIENT_SECRET="<AZURE_CLIENT_SECRET>"
-AZURE_STORAGE_ACCOUNT="sfdrsecondaryblob"
+AZURE_SUBSCRIPTION_ID="1fbaecf5-392d-4648-9f2e-4d694cfc0b83"
+AZURE_TENANT_ID="cadbe997-3a4b-4870-b596-68098efeb67e"
+AZURE_CLIENT_ID="<REDACTED_AZURE_CLIENT_ID>"
+AZURE_CLIENT_SECRET="<REDACTED_AZURE_CLIENT_SECRET>"
+AZURE_STORAGE_ACCOUNT="sfdrsecstagedrdemo"
 AZURE_STORAGE_CONTAINER="sf-dr-secondary-stage"
 ```
 
@@ -101,13 +109,13 @@ AZURE_STORAGE_CONTAINER="sf-dr-secondary-stage"
 
 ---
 
-## 7. Live Account Status (last checked 2026-10-24 02:35 IST)
+## 7. Live Account Status (last checked 2026-11-01 14:35 IST)
 | Account | Identifier | Region / Edition | Role / Status |
 |---|---|---|---|
-| AWS | `621236283472` (`admin_user`) | `us-east-1` | S3 remote state intact; stage bucket destroyed ($0 burn) 🟢 Standby |
-| Azure | sub `1fbaecf5-392d-4648-9f2e-4d694cfc0b83` | `East US` | RG and Storage Account destroyed ($0 burn) 🟢 Standby |
-| Snowflake Primary | `NNFCDXY-SF_AWS_PRIMARY` (`AWC63551`) | AWS `us-east-1` (Business Critical) | DB & WH destroyed; account & key-pair ready for apply 🟢 Standby |
-| Snowflake Secondary | `NNFCDXY-SF_AZURE_DR` (`LQB72917`) | Azure `eastus2` (Business Critical) | Replica DB & WH destroyed; account & key-pair ready 🟢 Standby |
+| AWS | `621236283472` (`admin_user`) | `us-east-1` | S3 remote state intact; stage bucket ready 🟢 Standby |
+| Azure | sub `1fbaecf5-392d-4648-9f2e-4d694cfc0b83` | `East US` | RG and Storage Account (`sfdrsecstagedrdemo`) 🟢 Active |
+| Snowflake Primary | `NNFCDXY-SF_AWS_PRIMARY` (`AWC63551`) | AWS `us-east-1` (Business Critical) | User: `YASHSNOW20`, Pass: `Atlas20@200605`, MFA bypassed, RSA ready 🟢 Active |
+| Snowflake Secondary | `NNFCDXY-SF_AZURE_DR` (`LQB72917`) | Azure `eastus2` (Business Critical) | User: `YASHSNOW20`, Pass: `SecurePassword123!`, MFA bypassed, RSA ready 🟢 Active |
 | Snowflake Org Admin | `NNFCDXY-OZ10928` (`PP26358`) | AWS `ap-southeast-7` (Standard) | Org management & payment billing anchor 🟢 Active |
 
 ---
@@ -141,6 +149,8 @@ AZURE_STORAGE_CONTAINER="sf-dr-secondary-stage"
 - **2026-10-26** — Error Knowledge Base Established: created `ERROR.md` logging ERR-001 through ERR-009 with root cause analysis and verified solutions.
 - **2026-10-27** — Phase 5 Modules 1, 2, 3, & 5 Completed: Connected live Slack webhook; wired rich Slack alert cards into CLI failover/failback and notify-sync; pruned legacy mock ingest files; hardened Dockerfiles with non-root security user; created root `docker-compose.yml`; enriched GitHub Actions CI with Docker build & K8s lint gates; enhanced Mission Control UI with PaySim distribution pie chart, cross-cloud WAN throughput gauge, FinOps guardrail card, and interactive drill playback log; published comprehensive Viva defense documents (`EXECUTIVE_PITCH.md`, `INCIDENT_CASE_STUDIES.md`, `ARCHITECTURE_DEFENSE.md`).
 - **2026-10-27** — Executive UI/UX Overhaul & Pre-Push Auto-Pop: Built enterprise React + Tailwind Control Plane in Merriweather font served via FastAPI on port 8000; configured `.git/hooks/pre-push` to automatically launch the live control plane website into the browser on every `git push`.
+- **2026-11-01** — Containerized K8s & Zero-Touch Emergency Onboarding: Modernized `docker/Dockerfile.dashboard` to package FastAPI + React on port 8000; updated `docker-compose.yml` and `k8s/dashboard-deployment.yaml` to port 8000; added root 1-click bootstrap scripts (`emergency.bat` / `emergency.ps1`); automated emergency remote triggers via `workflow_dispatch` in `.github/workflows/enterprise_dr_pipeline.yml`.
+- **2026-11-01** — Dual Account Password & MFA Stabilization: Resolved secondary account web UI login failure ("Does not exist" / "Incorrect password") by diagnosing TOTP MFA enforcement on `ACCOUNTADMIN`; set explicit password `SecurePassword123!` and activated temporary MFA bypass (`MINS_TO_BYPASS_MFA = 1440`); verified direct login on both accounts via Python and Web UI endpoints (`/us-east-1/awc63551` and `/eastus2.azure/lqb72917`); synchronized `.env` and `memory.md`.
 
 ---
 

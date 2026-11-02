@@ -70,7 +70,7 @@ def load_and_verify(baseline_parquet: Path | None = None) -> int:
         ROUND(UNIFORM(0, 1000000, RANDOM(10))::FLOAT, 2),
         IFF(UNIFORM(1, 1000, RANDOM(11)) <= 2, 1, 0),
         0
-    FROM TABLE(GENERATOR(ROWCOUNT => 500000));
+    FROM TABLE(GENERATOR(ROWCOUNT => 6362620));
     """
     runner.run(settings.primary, ["USE WAREHOUSE DR_CONTROLLER_WH", bulk_insert_sql], use_warehouse=True)
     load_time = time.time() - t0

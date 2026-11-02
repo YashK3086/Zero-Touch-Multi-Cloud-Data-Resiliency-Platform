@@ -12,13 +12,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && chown -R appuser:appuser /app
 
 COPY pyproject.toml .
-RUN pip install --no-cache-dir .
-
 COPY --chown=appuser:appuser src/ /app/src/
+RUN pip install --no-cache-dir .
 
 USER appuser
 
 ENV PYTHONUNBUFFERED=1
 
+HEALTHCHECK --interval=15s --timeout=5s --retries=3 \
+  CMD python -c "from sf_dr_controller.config import Settings; s = Settings(); assert s.snowflake_account_primary" || exit 1
+
 ENTRYPOINT ["sf-dr-controller"]
-CMD ["daemon", "--interval", "10", "--strikes", "3"]
+CMD ["--plain-logs", "daemon", "--interval", "10", "--strikes", "3"]

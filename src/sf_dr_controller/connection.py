@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Sequence
+from pathlib import Path
 from typing import Any, Protocol
 
 from .config import AccountConfig
@@ -45,8 +46,20 @@ class SnowflakeSqlRunner:
         if use_warehouse and account.warehouse:
             kwargs["warehouse"] = account.warehouse
         if account.private_key_path:
+            import os
+            import shutil
+            import stat
+            import tempfile
+
+            key_path = account.private_key_path
+            if os.name != "nt" and key_path.exists():
+                tmp_key = Path(tempfile.gettempdir()) / f"sf_key_{os.getuid() if hasattr(os, 'getuid') else 'app'}.p8"
+                if not tmp_key.exists():
+                    shutil.copyfile(key_path, tmp_key)
+                    os.chmod(tmp_key, stat.S_IRUSR)
+                key_path = tmp_key
             kwargs["authenticator"] = "SNOWFLAKE_JWT"
-            kwargs["private_key_file"] = str(account.private_key_path)
+            kwargs["private_key_file"] = str(key_path)
         elif account.password:
             kwargs["password"] = account.password
         else:
