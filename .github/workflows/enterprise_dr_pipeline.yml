@@ -67,7 +67,7 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: "1.9.5"
+          terraform_version: "1.10.0"
 
       - name: Format Check
         working-directory: ./terraform
@@ -166,10 +166,28 @@ jobs:
 
       - name: Validate Kubernetes Manifests (Dry-Run & Schema Check)
         run: |
-          kubectl apply --dry-run=client --validate=false -f k8s/configmap.yaml
-          kubectl apply --dry-run=client --validate=false -f k8s/secret.yaml
-          kubectl apply --dry-run=client --validate=false -f k8s/daemon-deployment.yaml
-          kubectl apply --dry-run=client --validate=false -f k8s/dashboard-deployment.yaml
+          mkdir -p ~/.kube
+          cat << 'EOF' > ~/.kube/config
+          apiVersion: v1
+          kind: Config
+          clusters:
+          - cluster:
+              server: https://127.0.0.1:6443
+            name: mock-cluster
+          contexts:
+          - context:
+              cluster: mock-cluster
+              user: mock-user
+            name: mock-context
+          current-context: mock-context
+          users:
+          - name: mock-user
+            user: {}
+          EOF
+          kubectl apply --dry-run=client -f k8s/configmap.yaml
+          kubectl apply --dry-run=client -f k8s/secret.yaml
+          kubectl apply --dry-run=client -f k8s/daemon-deployment.yaml
+          kubectl apply --dry-run=client -f k8s/dashboard-deployment.yaml
 
   # =========================================================================
   # STAGE 5: Multi-Cloud Live Health Probes, Autonomous 3-Strike & Failback
