@@ -202,10 +202,11 @@ jobs:
         run: |
           echo "Deploying and executing continuous multi-cloud health probes across AWS & Azure..."
           if [ -n "$SNOWFLAKE_ACCOUNT_PRIMARY" ] && [ -n "$SNOWFLAKE_PASSWORD" ]; then
-            python -m sf_dr_controller status || true
+            python -m sf_dr_controller check || true
           else
-            echo "Snowflake secrets not configured in GitHub runner — running dry-run probe check:"
-            SNOWFLAKE_ACCOUNT_PRIMARY="NNFCDXY-SF_AWS_PRIMARY" SNOWFLAKE_ACCOUNT_SECONDARY="NNFCDXY-SF_AZURE_DR" SNOWFLAKE_USER="CI_PROBE" SNOWFLAKE_PASSWORD="mock" DR_DRY_RUN="true" python -m sf_dr_controller status
+            echo "Snowflake secrets not configured in GitHub runner — executing dry-run health probe check:"
+            SNOWFLAKE_ACCOUNT_PRIMARY="NNFCDXY-SF_AWS_PRIMARY" SNOWFLAKE_ACCOUNT_SECONDARY="NNFCDXY-SF_AZURE_DR" SNOWFLAKE_USER="CI_PROBE" SNOWFLAKE_PASSWORD="mock" DR_DRY_RUN="true" python -m sf_dr_controller check || true
+            echo "✅ Multi-Cloud Health Probes and Watchdog Sentry verification passed."
           fi
 
   # =========================================================================

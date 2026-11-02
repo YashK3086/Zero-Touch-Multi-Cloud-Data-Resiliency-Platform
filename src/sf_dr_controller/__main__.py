@@ -28,7 +28,7 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--plain-logs", action="store_true", help="human-readable logs instead of JSON")
     sub = p.add_subparsers(dest="command", required=True)
 
-    c = sub.add_parser("check", help="probe both accounts once")
+    c = sub.add_parser("check", aliases=["status"], help="probe both accounts once")
     c.add_argument("--lag", action="store_true", help="also measure replication lag (uses warehouse credits)")
 
     r = sub.add_parser("run", help="continuous monitoring loop")
