@@ -166,28 +166,8 @@ jobs:
 
       - name: Validate Kubernetes Manifests (Dry-Run & Schema Check)
         run: |
-          mkdir -p ~/.kube
-          cat << 'EOF' > ~/.kube/config
-          apiVersion: v1
-          kind: Config
-          clusters:
-          - cluster:
-              server: https://127.0.0.1:6443
-            name: mock-cluster
-          contexts:
-          - context:
-              cluster: mock-cluster
-              user: mock-user
-            name: mock-context
-          current-context: mock-context
-          users:
-          - name: mock-user
-            user: {}
-          EOF
-          kubectl apply --dry-run=client -f k8s/configmap.yaml
-          kubectl apply --dry-run=client -f k8s/secret.yaml
-          kubectl apply --dry-run=client -f k8s/daemon-deployment.yaml
-          kubectl apply --dry-run=client -f k8s/dashboard-deployment.yaml
+          kubectl create --dry-run=client -o yaml -f k8s/configmap.yaml -f k8s/secret.yaml -f k8s/daemon-deployment.yaml -f k8s/dashboard-deployment.yaml > /dev/null
+          echo "✅ All Kubernetes manifests (Daemon, Dashboard, ConfigMap, Secret, Service) validated successfully."
 
   # =========================================================================
   # STAGE 5: Multi-Cloud Live Health Probes, Autonomous 3-Strike & Failback
