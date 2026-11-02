@@ -440,8 +440,8 @@ export default function App() {
               <Shield className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-sm font-black text-slate-900 leading-tight">Zero-Touch DR</h2>
-              <p className="text-[11px] text-slate-500 font-medium">100% Live Snowflake Control</p>
+              <h2 className="text-sm font-black text-slate-900 leading-tight">Auto Fail-Over</h2>
+              <p className="text-[11px] text-slate-500 font-medium">Autonomous Cloud Resiliency</p>
             </div>
           </div>
 
@@ -613,27 +613,24 @@ export default function App() {
               </div>
             </div>
 
-            <div className="space-y-1.5">
-              <button
-                onClick={() => handleWatchdogToggle(!status?.watchdog?.enabled)}
-                className="w-full py-1.5 px-2.5 bg-white hover:bg-slate-100 border border-slate-300 rounded text-[11px] font-bold text-slate-800 transition cursor-pointer"
-              >
-                {status?.watchdog?.enabled
-                  ? 'Switch to Manual Failover Mode'
-                  : 'Enable Autonomous 3-Strike Mode'}
-              </button>
-
+            <div className="space-y-2">
+              <div className="text-[11px] text-indigo-900/80 font-semibold flex items-center justify-between">
+                <span>Watchdog Mode:</span>
+                <span className="font-bold text-indigo-700">Autonomous (Active)</span>
+              </div>
               <button
                 onClick={() => handleToggleAwsOutage(!status?.watchdog?.simulate_aws_outage)}
-                className={`w-full py-1.5 px-2.5 rounded text-[11px] font-bold transition cursor-pointer ${
+                className={`w-full py-2 px-3 rounded-lg text-xs font-bold transition shadow-xs flex items-center justify-center space-x-1.5 cursor-pointer ${
                   status?.watchdog?.simulate_aws_outage
                     ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
                     : 'bg-red-600 hover:bg-red-700 text-white'
                 }`}
               >
-                {status?.watchdog?.simulate_aws_outage
-                  ? '✓ Clear Outage & Restore AWS Probes'
-                  : '⚡ Inject AWS Outage (Test 3 Strikes)'}
+                <span>
+                  {status?.watchdog?.simulate_aws_outage
+                    ? '✓ Clear Outage & Restore AWS Probes'
+                    : '⚡ Inject AWS Outage (Test 3 Strikes)'}
+                </span>
               </button>
             </div>
           </div>
@@ -685,61 +682,15 @@ export default function App() {
                 </span>
               </div>
               <h1 className="text-xl md:text-2xl font-black text-slate-900 tracking-tight">
-                Cross-Cloud Business Continuity Engine (Live Execution)
+                Auto Fail-Over
               </h1>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                onClick={() => startLiveWorkflow('ingest_sync', batchSize)}
-                disabled={isWorkflowBusy}
-                className="flex items-center space-x-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-lg text-xs font-bold shadow-2xs transition cursor-pointer"
-              >
-                <Zap className="w-3.5 h-3.5" />
-                <span>Ingest +{batchSize.toLocaleString()} Rows & Sync</span>
-              </button>
-
-              <button
-                onClick={() => setAutoStreamLoop(!autoStreamLoop)}
-                className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-bold border transition cursor-pointer ${
-                  autoStreamLoop
-                    ? 'bg-amber-500 text-white border-amber-600'
-                    : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
-                }`}
-              >
-                {autoStreamLoop ? <Square className="w-3 h-3" /> : <Play className="w-3 h-3 text-emerald-600" />}
-                <span>{autoStreamLoop ? 'Stop Auto-Stream (20s)' : 'Auto-Stream Loop (20s)'}</span>
-              </button>
-
-              <button
-                onClick={() => setAutoRefresh(!autoRefresh)}
-                className={`flex items-center space-x-1 px-3 py-1.5 rounded-lg text-xs font-bold border transition cursor-pointer ${
-                  autoRefresh
-                    ? 'bg-emerald-50 text-emerald-700 border-emerald-300'
-                    : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
-                }`}
-              >
-                <Radio className={`w-3.5 h-3.5 ${autoRefresh ? 'text-emerald-600 animate-pulse' : 'text-slate-400'}`} />
-                <span>{autoRefresh ? 'Live Poll (2.5s)' : 'Polling Paused'}</span>
-              </button>
-
-              <button
-                onClick={() => {
-                  const dataStr =
-                    'data:text/json;charset=utf-8,' +
-                    encodeURIComponent(JSON.stringify({ status, diagnostics, drillHistory }, null, 2));
-                  const a = document.createElement('a');
-                  a.setAttribute('href', dataStr);
-                  a.setAttribute('download', `snowflake-dr-live-snapshot-${Date.now()}.json`);
-                  document.body.appendChild(a);
-                  a.click();
-                  a.remove();
-                }}
-                className="flex items-center space-x-1 px-3 py-1.5 bg-blue-50 text-blue-700 border border-blue-200 rounded-lg text-xs font-bold hover:bg-blue-100 transition cursor-pointer"
-              >
-                <Download className="w-3.5 h-3.5" />
-                <span>Export Live JSON</span>
-              </button>
+            <div className="flex items-center space-x-3">
+              <div className="flex items-center space-x-2 bg-emerald-50 text-emerald-800 border border-emerald-200 px-3 py-1.5 rounded-lg text-xs font-bold shadow-2xs">
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                <span>Live Telemetry Active (2.5s)</span>
+              </div>
             </div>
           </div>
         </header>
@@ -1432,32 +1383,12 @@ export default function App() {
               </span>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="enterprise-card p-5 border-l-4 border-l-red-500 flex flex-col justify-between">
-                <div>
-                  <h3 className="text-sm font-black text-slate-900 flex items-center space-x-1.5 mb-2">
-                    <Flame className="w-4 h-4 text-red-500" />
-                    <span>Regional Chaos Drill (AWS ➔ Azure)</span>
-                  </h3>
-                  <p className="text-xs text-slate-600 mb-4">
-                    Executes 3-strike watchdog sequence, promotes <code className="font-mono">SF_AZURE_DR (LQB72917)</code> to real PRIMARY, and swings Anycast DNS.
-                  </p>
-                </div>
-                <button
-                  disabled={isWorkflowBusy}
-                  onClick={() => startLiveWorkflow('chaos')}
-                  className="w-full py-2.5 px-4 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white font-bold text-xs rounded-lg shadow-xs transition flex items-center justify-center space-x-2 cursor-pointer"
-                >
-                  <Zap className="w-4 h-4" />
-                  <span>Run Live Chaos Failover Drill</span>
-                </button>
-              </div>
-
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="enterprise-card p-5 border-l-4 border-l-amber-500 flex flex-col justify-between">
                 <div>
                   <h3 className="text-sm font-black text-slate-900 flex items-center space-x-1.5 mb-2">
                     <ArrowRightLeft className="w-4 h-4 text-amber-500" />
-                    <span>Manual Failover to Azure (LQB72917)</span>
+                    <span>Emergency Failover to Azure (LQB72917)</span>
                   </h3>
                   <p className="text-xs text-slate-600 mb-4">
                     Runs real <code className="font-mono">ALTER FAILOVER GROUP PRIMARY</code> + <code className="font-mono">ALTER CONNECTION PRIMARY</code> on Azure East US 2.

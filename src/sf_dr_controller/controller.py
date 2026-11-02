@@ -110,7 +110,7 @@ class SnowflakeDRController:
             f"AWS ({self.settings.primary.identifier}) to Azure ({self.settings.secondary.identifier})."
         )
         self.notifier.send_alert(
-            "INITIATING AUTONOMOUS ZERO-TOUCH FAILOVER",
+            "INITIATING AUTO FAIL-OVER",
             msg,
             level="CRITICAL",
             fields={"Trigger": "3-Strike Watchdog Expiry", "Destination Cloud": "Azure East US 2"},

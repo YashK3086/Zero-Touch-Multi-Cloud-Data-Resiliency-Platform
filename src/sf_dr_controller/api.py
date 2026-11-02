@@ -571,7 +571,7 @@ class LiveSnowflakeState:
             self.add_log(
                 source="watchdog",
                 account="SENTRY",
-                message=f"🔥 3 CONSECUTIVE STRIKES REACHED ({self.consecutive_failures}/{self.failure_threshold})! Launching Autonomous Zero-Touch Failover to Azure East US 2...",
+                message=f"🔥 3 CONSECUTIVE STRIKES REACHED ({self.consecutive_failures}/{self.failure_threshold})! Launching Auto Fail-Over to Azure East US 2...",
                 level="ERROR",
             )
 
