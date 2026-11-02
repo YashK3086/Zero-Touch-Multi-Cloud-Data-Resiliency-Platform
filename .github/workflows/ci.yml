@@ -55,7 +55,7 @@ jobs:
 
       - name: Terraform Init (backend false)
         working-directory: ./terraform
-        run: terraform init -backend=false
+        run: terraform init -backend=false -upgrade
 
       - name: Terraform Validate
         working-directory: ./terraform

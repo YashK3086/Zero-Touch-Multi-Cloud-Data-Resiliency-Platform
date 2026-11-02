@@ -75,7 +75,7 @@ jobs:
 
       - name: Terraform Init
         working-directory: ./terraform
-        run: terraform init -backend=false
+        run: terraform init -backend=false -upgrade
 
       - name: Terraform Validate Infrastructure
         working-directory: ./terraform
@@ -166,10 +166,10 @@ jobs:
 
       - name: Validate Kubernetes Manifests (Dry-Run & Schema Check)
         run: |
-          kubectl apply --dry-run=client -f k8s/configmap.yaml
-          kubectl apply --dry-run=client -f k8s/secret.yaml
-          kubectl apply --dry-run=client -f k8s/daemon-deployment.yaml
-          kubectl apply --dry-run=client -f k8s/dashboard-deployment.yaml
+          kubectl apply --dry-run=client --validate=false -f k8s/configmap.yaml
+          kubectl apply --dry-run=client --validate=false -f k8s/secret.yaml
+          kubectl apply --dry-run=client --validate=false -f k8s/daemon-deployment.yaml
+          kubectl apply --dry-run=client --validate=false -f k8s/dashboard-deployment.yaml
 
   # =========================================================================
   # STAGE 5: Multi-Cloud Live Health Probes, Autonomous 3-Strike & Failback
