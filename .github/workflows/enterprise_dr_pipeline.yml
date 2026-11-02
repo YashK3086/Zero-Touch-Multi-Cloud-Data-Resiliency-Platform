@@ -164,10 +164,9 @@ jobs:
           push: false
           tags: sf-dr-dashboard:test
 
-      - name: Validate Kubernetes Manifests (Dry-Run & Schema Check)
+      - name: Validate Kubernetes Manifests (Syntax & Schema Validation)
         run: |
-          kubectl create --dry-run=client -o yaml -f k8s/configmap.yaml -f k8s/secret.yaml -f k8s/daemon-deployment.yaml -f k8s/dashboard-deployment.yaml > /dev/null
-          echo "✅ All Kubernetes manifests (Daemon, Dashboard, ConfigMap, Secret, Service) validated successfully."
+          python scripts/validate_k8s_manifests.py
 
   # =========================================================================
   # STAGE 5: Multi-Cloud Live Health Probes, Autonomous 3-Strike & Failback
