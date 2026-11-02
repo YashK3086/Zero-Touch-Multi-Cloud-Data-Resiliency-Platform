@@ -143,6 +143,11 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      - name: Set up Kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: 'latest'
+
       - name: Build Controller Daemon Image (sf-dr-daemon)
         uses: docker/build-push-action@v5
         with:
