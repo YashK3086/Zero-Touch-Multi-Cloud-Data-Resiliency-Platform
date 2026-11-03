@@ -51,7 +51,7 @@ if (-not $SkipTerraform) {
         terraform init -backend=false -input=false -no-color | Out-Null
         Write-Host "      -> Terraform initialized cleanly." -ForegroundColor DarkGray
         # Apply core database, replication failover group, and redirect connection
-        terraform apply -target=snowflake_database.dr_database -target=snowflake_schema.dr_schema -target=snowflake_failover_group.dr_failover_group -target=snowflake_primary_connection.dr_primary_connection -target=snowflake_secondary_connection.dr_secondary_connection -auto-approve -no-color 2>&1 | Out-Null
+        terraform apply -target='snowflake_resource_monitor.dr_credit_guard' -target='snowflake_warehouse.dr_warehouse' -target='snowflake_resource_monitor.dr_credit_guard_secondary' -target='snowflake_warehouse.dr_warehouse_secondary' -target='snowflake_database.dr_database' -target='snowflake_schema.dr_schema' -target='snowflake_failover_group.dr_primary_failover_group' -target='snowflake_failover_group.dr_secondary_failover_group' -target='snowflake_primary_connection.dr_primary_connection' -target='snowflake_secondary_connection.dr_secondary_connection' -auto-approve -no-color 2>&1 | Out-Null
         Write-Host "      -> Core Snowflake DR Infrastructure Verified." -ForegroundColor Green
     } catch {
         Write-Host "      -> Terraform verification note: $($_.Exception.Message)" -ForegroundColor Yellow
@@ -82,6 +82,11 @@ if (-not $SkipDataSync) {
 if (-not $SkipK8s) {
     Write-Host "[3/6] ☸️  Deploying Kubernetes Monitoring Pods & Health Probes..." -ForegroundColor Green
     try {
+        $mk = minikube status -p sf-cluster 2>&1
+        if ($LASTEXITCODE -ne 0 -or ($mk -notmatch "Running")) {
+            Write-Host "      -> Starting Minikube cluster 'sf-cluster'..." -ForegroundColor Cyan
+            minikube start -p sf-cluster --driver=docker | Out-Null
+        }
         kubectl apply -f k8s/configmap.yaml | Out-Null
         kubectl apply -f k8s/secret.yaml | Out-Null
         kubectl apply -f k8s/daemon-deployment.yaml | Out-Null
