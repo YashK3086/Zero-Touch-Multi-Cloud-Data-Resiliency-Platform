@@ -30,7 +30,6 @@ from pydantic import BaseModel, Field
 
 from . import sql
 from .config import AccountConfig, Settings
-from .notifications import NotificationService
 
 logger = logging.getLogger("sf_dr_controller.api")
 
@@ -642,7 +641,6 @@ async def disable_browser_cache(request: Request, call_next):
 def get_system_status() -> dict[str, Any]:
     settings = Settings()
     git_meta = get_git_metadata()
-    notifier = NotificationService(state.runtime_webhook_url or settings.dr_webhook_url or os.getenv("SLACK_WEBHOOK_URL"))
 
     with state._lock:
         active_snap, standby_snap = state.active_and_standby()
@@ -998,7 +996,6 @@ def _execute_real_workflow(
         return
 
     settings = Settings()
-    notifier = NotificationService(state.runtime_webhook_url or settings.dr_webhook_url or os.getenv("SLACK_WEBHOOK_URL"))
     fg_name = sql.validate_identifier(settings.snowflake_failover_group_name)
     conn_name = sql.validate_identifier(settings.snowflake_redirect_connection_name)
     db_name = sql.validate_identifier(settings.snowflake_database)
