@@ -801,7 +801,7 @@ def get_kpi_cards() -> list[dict[str, Any]]:
                 "subtext": cr_sub,
                 "status": "neutral",
                 "badge": "Real FinOps",
-                "trend": "AUTO_SUSPEND = 60s",
+                "trend": "IDLE_TIMEOUT = 60s",
             },
         ]
 

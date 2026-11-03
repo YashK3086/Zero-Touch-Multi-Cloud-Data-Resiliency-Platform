@@ -7,6 +7,10 @@
     font-family: 'Merriweather', Georgia, Cambria, 'Times New Roman', Times, serif !important;
   }
 
+  html {
+    font-size: 18px; /* Globally increases font size by +2px */
+  }
+
   body {
     background-color: #F8FAFC;
     color: #1E293B;
@@ -17,38 +21,38 @@
 
   /* Distinct Typography Hierarchy */
   h1 {
-    font-size: 1.85rem;
-    line-height: 2.25rem;
+    font-size: 2.05rem;
+    line-height: 2.5rem;
     font-weight: 900;
     color: #0F172A;
     letter-spacing: -0.02em;
   }
 
   h2 {
-    font-size: 1.35rem;
-    line-height: 1.85rem;
+    font-size: 1.5rem;
+    line-height: 2.0rem;
     font-weight: 700;
     color: #0F172A;
     letter-spacing: -0.01em;
   }
 
   h3 {
-    font-size: 1.05rem;
-    line-height: 1.5rem;
+    font-size: 1.2rem;
+    line-height: 1.65rem;
     font-weight: 700;
     color: #1E293B;
   }
 
   h4 {
-    font-size: 0.9rem;
-    line-height: 1.35rem;
+    font-size: 1.05rem;
+    line-height: 1.45rem;
     font-weight: 700;
     color: #334155;
   }
 
   p, span, td, th, div {
-    font-size: 0.825rem;
-    line-height: 1.35rem;
+    font-size: 0.925rem;
+    line-height: 1.45rem;
   }
 
   .tabular-nums {
@@ -70,7 +74,7 @@
 }
 
 .section-tag {
-  font-size: 0.75rem;
+  font-size: 0.85rem;
   font-weight: 700;
   letter-spacing: 0.04em;
   color: #64748B;

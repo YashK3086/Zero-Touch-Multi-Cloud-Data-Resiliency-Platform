@@ -569,7 +569,7 @@ export default function App() {
         <div className="pt-4 border-t border-slate-100 text-[11px] text-slate-500">
           <div className="flex justify-between items-center mb-1">
             <span className="font-bold text-slate-700">Live DR_CREDIT_GUARD:</span>
-            <span className="font-black text-emerald-600">AUTO_SUSPEND 60s</span>
+            <span className="font-black text-emerald-600">IDLE_TIMEOUT 60s</span>
           </div>
           <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
             <div className="bg-emerald-500 h-full transition-all duration-500" style={{ width: `${creditPct}%` }}></div>
@@ -672,7 +672,7 @@ export default function App() {
           {/* ============================================================== */}
           <div>
             <div className="section-tag mb-3 flex items-center justify-between">
-              <span>1 · Live Snowflake Telemetry (Cloud Services Metadata — 0 Idle Compute Burn)</span>
+              <span>Live Snowflake Telemetry (Cloud Services Metadata — 0 Idle Compute Burn)</span>
               <span className="text-[11px] text-slate-500 font-mono">
                 {status?.last_probe_at ? `Last Snowflake response: ${status.last_probe_at}` : 'Connecting to Snowflake...'}
               </span>
@@ -723,7 +723,7 @@ export default function App() {
             <div className="section-tag mb-2.5 flex items-center justify-between">
               <span className="flex items-center space-x-1.5">
                 <Terminal className="w-3.5 h-3.5 text-slate-700" />
-                <span>2 · Live Execution Stream (GitHub Actions Real-Time SQL Runner)</span>
+                <span>Live Execution Stream (GitHub Actions Real-Time SQL Runner)</span>
               </span>
               <div className="flex items-center space-x-2 text-xs">
                 <span className="text-slate-500 font-semibold">Batch size:</span>
@@ -998,7 +998,7 @@ export default function App() {
           {/* ============================================================== */}
           <div>
             <div className="section-tag mb-3 flex items-center justify-between">
-              <span>3 · Real-Time Cloud Authority Comparison (AWS vs Azure Live State)</span>
+              <span>Real-Time Cloud Authority Comparison (AWS vs Azure Live State)</span>
               <span className="text-[11px] text-slate-500 font-medium">
                 Flips live when Failover / Failback executes on Snowflake
               </span>
@@ -1167,7 +1167,7 @@ export default function App() {
                 <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-between text-xs font-bold text-slate-700">
                   <span>Replication Schedule:</span>
                   <span className="text-emerald-700 font-mono">
-                    {diagnostics?.data_health?.schedule || '10 MINUTE'} ({diagnostics?.data_health?.secondary_state || 'STARTED'})
+                    {diagnostics?.data_health?.schedule || '10 MINUTE'}
                   </span>
                 </div>
               </div>
@@ -1176,8 +1176,8 @@ export default function App() {
             {/* ============================================================== */}
             {/* LIVE HEALTH PROBE GRAPHS, STRIKE TIMELINE & K8S POD METADATA   */}
             {/* ============================================================== */}
-            <div className="mt-4 grid grid-cols-1 lg:grid-cols-2 gap-4">
-              {/* Card A: Multi-Cloud Probe Availability & Strike History Graph */}
+            <div className="mt-4 w-full">
+              {/* Multi-Cloud Probe Availability & Strike History Graph */}
               <div className="enterprise-card p-5 flex flex-col justify-between">
                 <div>
                   <div className="flex items-center justify-between mb-2">
@@ -1262,42 +1262,6 @@ export default function App() {
                   </div>
                 </div>
               </div>
-
-              {/* Card B: Kubernetes & Container Health Probe Spec Metadata */}
-              <div className="enterprise-card p-5 flex flex-col justify-between">
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <h3 className="text-sm font-black text-slate-900 flex items-center space-x-1.5">
-                      <Shield className="w-4 h-4 text-emerald-600" />
-                      <span>Declared Kubernetes & Docker Health Probe Metadata</span>
-                    </h3>
-                    <span className="text-[10px] font-bold bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded border border-emerald-200">
-                      K8s Manifests Verified
-                    </span>
-                  </div>
-                  <p className="text-xs text-slate-500 mb-3">
-                    Live container probe declarations across <code className="font-mono">k8s/dashboard-deployment.yaml</code> and <code className="font-mono">k8s/daemon-deployment.yaml</code>.
-                  </p>
-
-                  <div className="space-y-2.5">
-                    {(diagnostics?.probe_metadata?.k8s_probes || []).map((kp, idx) => (
-                      <div key={idx} className="p-3 rounded-lg bg-slate-50 border border-slate-200 text-xs space-y-1">
-                        <div className="flex items-center justify-between">
-                          <span className="font-black text-slate-900 font-mono">Pod: {kp.pod} ({kp.image})</span>
-                          <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 border border-emerald-300">
-                            {kp.status}
-                          </span>
-                        </div>
-                        <div className="text-[11px] font-mono text-slate-600 grid grid-cols-1 gap-0.5 pt-1">
-                          <div><strong className="text-slate-800">Startup:</strong> {kp.startup_probe}</div>
-                          <div><strong className="text-slate-800">Liveness:</strong> {kp.liveness_probe}</div>
-                          <div><strong className="text-slate-800">Readiness:</strong> {kp.readiness_probe}</div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
             </div>
           </div>
 
@@ -1306,7 +1270,7 @@ export default function App() {
           {/* ============================================================== */}
           <div>
             <div className="section-tag mb-3 flex items-center justify-between">
-              <span>4 · Live Snowflake DR Operations (Executes Real DDL on AWS & Azure)</span>
+              <span>Live Snowflake DR Operations (Executes Real DDL on AWS & Azure)</span>
               <span className="text-[11px] text-slate-500 font-medium">
                 Streams live SQL & Query IDs into the GitHub Actions Console above
               </span>
@@ -1444,7 +1408,7 @@ export default function App() {
           {/* ============================================================== */}
           <div>
             <div className="section-tag mb-3 flex items-center justify-between">
-              <span>5 · Live Snowflake Object & Endpoint Ledger</span>
+              <span>Live Snowflake Object & Endpoint Ledger</span>
               <span className="text-[11px] text-slate-400 font-medium">{ledger.length} live objects</span>
             </div>
 
@@ -1511,7 +1475,7 @@ export default function App() {
           {/* ============================================================== */}
           <div>
             <div className="section-tag mb-3 flex items-center justify-between">
-              <span>6 · Live Session Execution History (Real Runs Only)</span>
+              <span>Live Session Execution History (Real Runs Only)</span>
               <span className="text-[11px] text-slate-400 font-medium">{drillHistory.length} runs in this session</span>
             </div>
 
