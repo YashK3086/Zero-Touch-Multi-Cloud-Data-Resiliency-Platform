@@ -681,7 +681,6 @@ def get_system_status() -> dict[str, Any]:
             "anycast": dict(state.anycast),
             "last_rto_seconds": state.last_rto_seconds,
             "last_reconcile": state.last_reconcile,
-            "slack_connected": notifier.enabled,
             "git": git_meta,
             "watchdog": {
                 "enabled": state.watchdog_enabled,
@@ -1199,7 +1198,7 @@ FROM TABLE(GENERATOR(ROWCOUNT => {int(batch_rows)}));
                 "Refresh Final Pending WAN Delta onto Azure Before Promotion",
                 f"Promote Failover Group '{fg_name}' on Azure to PRIMARY (Read-Write)",
                 f"Swing Global Anycast Redirect '{conn_name}' to Azure East US 2",
-                "Probe Global Anycast URL & Dispatch Live Slack SRE Alert",
+                "Probe Global Anycast URL & Verify Multi-Cloud Route",
             ]
             yield _sse(
                 "workflow_init",
@@ -1300,7 +1299,7 @@ FROM TABLE(GENERATOR(ROWCOUNT => {int(batch_rows)}));
                 cur.close()
                 yield _sse("step_done", {"step_index": 3, "duration_s": round(time.perf_counter() - s3, 2)})
 
-            # Step 4: Verify Anycast DNS + Slack Notification
+            # Step 4: Verify Anycast DNS & Multi-Cloud Routing
             s4 = time.perf_counter()
             yield _sse("step_start", {"step_index": 4})
             anycast_res = state.probe_anycast_redirect(settings)
@@ -1312,19 +1311,7 @@ FROM TABLE(GENERATOR(ROWCOUNT => {int(batch_rows)}));
                 sfqid=anycast_res.get("sfqid"),
                 level="SUCCESS",
             )
-            slack_ok = notifier.send_alert(
-                "LIVE SNOWFLAKE FAILOVER EXECUTED TO AZURE",
-                f"Promoted {settings.snowflake_account_secondary} (LQB72917) to PRIMARY. Measured RTO: {measured_rto}s.",
-                level="CRITICAL" if is_chaos else "WARNING",
-                fields={
-                    "Run ID": run_id,
-                    "New Primary": "Azure East US 2 (LQB72917)",
-                    "Measured RTO": f"{measured_rto}s",
-                    "Failover Query ID": qid_pfg,
-                    "Redirect Query ID": qid_pcn,
-                },
-            )
-            yield emit_log(4, "SLACK", f"Slack SRE webhook alert dispatched: {'200 OK' if slack_ok else 'Skipped/Not Configured'}", level="SUCCESS")
+            yield emit_log(4, "AUDIT", "Audit event recorded: Failover to Azure verified successfully.", level="SUCCESS")
             state.run_probe_cycle(include_anycast=False)
             yield _sse("step_done", {"step_index": 4, "duration_s": round(time.perf_counter() - s4, 2)})
 
@@ -1342,7 +1329,7 @@ FROM TABLE(GENERATOR(ROWCOUNT => {int(batch_rows)}));
                         "rows": f"{state.azure.get('row_count') or 0:,} rows active on Azure",
                         "rpo": "0 rows",
                         "operator": operator,
-                        "slack": "200 OK" if slack_ok else "Local",
+                        "audit": "Verified",
                         "status": "Azure PRIMARY",
                     },
                 )
@@ -1366,7 +1353,7 @@ FROM TABLE(GENERATOR(ROWCOUNT => {int(batch_rows)}));
                 f"Execute Reverse Catch-Up WAN Refresh on AWS ('{fg_name}')",
                 f"Promote Failover Group '{fg_name}' Back to AWS PRIMARY",
                 f"Restore Global Anycast Connection '{conn_name}' to AWS us-east-1",
-                "Verify Global Anycast URL Lands on AWS & Dispatch Slack Recovery Card",
+                "Verify Global Anycast URL Lands on AWS & Restore Operational Status",
             ]
             yield _sse(
                 "workflow_init",
@@ -1454,7 +1441,7 @@ FROM TABLE(GENERATOR(ROWCOUNT => {int(batch_rows)}));
                 cur.close()
                 yield _sse("step_done", {"step_index": 3, "duration_s": round(time.perf_counter() - s3, 2)})
 
-            # Step 4: Verify Anycast DNS & Slack
+            # Step 4: Verify Anycast DNS & Route Parity
             s4 = time.perf_counter()
             yield _sse("step_start", {"step_index": 4})
             anycast_res = state.probe_anycast_redirect(settings)
@@ -1466,18 +1453,7 @@ FROM TABLE(GENERATOR(ROWCOUNT => {int(batch_rows)}));
                 sfqid=anycast_res.get("sfqid"),
                 level="SUCCESS",
             )
-            slack_ok = notifier.send_alert(
-                "LIVE SNOWFLAKE FAILBACK RESTORED TO AWS",
-                f"AWS Primary ({settings.snowflake_account_primary} / AWC63551) restored in {measured_switch}s switchover.",
-                level="SUCCESS",
-                fields={
-                    "Run ID": run_id,
-                    "Active Primary": "AWS us-east-1 (AWC63551)",
-                    "Switchover Time": f"{measured_switch}s",
-                    "Failover Query ID": qid_pfg,
-                },
-            )
-            yield emit_log(4, "SLACK", f"Slack recovery card dispatched: {'200 OK' if slack_ok else 'Skipped'}", level="SUCCESS")
+            yield emit_log(4, "AUDIT", "Audit event recorded: Failback to AWS verified successfully.", level="SUCCESS")
             state.run_probe_cycle(include_anycast=False)
             yield _sse("step_done", {"step_index": 4, "duration_s": round(time.perf_counter() - s4, 2)})
 
@@ -1498,7 +1474,7 @@ FROM TABLE(GENERATOR(ROWCOUNT => {int(batch_rows)}));
                         "rows": f"{state.aws.get('row_count') or 0:,} rows synced on AWS",
                         "rpo": "0 rows",
                         "operator": operator,
-                        "slack": "200 OK" if slack_ok else "Local",
+                        "audit": "Verified",
                         "status": "AWS PRIMARY",
                     },
                 )
@@ -1856,38 +1832,6 @@ def receive_git_push_event(payload: GitPushWebhookPayload) -> dict[str, Any]:
     )
     state.run_probe_cycle(include_anycast=True)
     return {"status": "ok", "git_push_event": event_record, "system": get_system_status()}
-
-
-class SlackTestRequest(BaseModel):
-    message: str = Field(default="Live ping from Snowflake Multi-Cloud DR Control Plane")
-    webhook_url: str | None = None
-
-
-@app.post("/api/slack/test")
-def test_slack_webhook(req: SlackTestRequest) -> dict[str, Any]:
-    settings = Settings()
-    if req.webhook_url and req.webhook_url.strip():
-        state.runtime_webhook_url = req.webhook_url.strip()
-        os.environ["SLACK_WEBHOOK_URL"] = state.runtime_webhook_url
-    url = state.runtime_webhook_url or settings.dr_webhook_url or os.getenv("SLACK_WEBHOOK_URL")
-    notifier = NotificationService(url)
-    if not notifier.enabled:
-        raise HTTPException(status_code=400, detail="Paste your Slack Incoming Webhook URL in the sidebar box or .env")
-
-    active_snap, _ = state.active_and_standby()
-    ok = notifier.send_alert(
-        "Snowflake DR Live Webhook Verification",
-        req.message,
-        level="INFO",
-        fields={
-            "Active Master": f"{active_snap['label']} ({active_snap['locator']})",
-            "AWS Rows": f"{state.aws.get('row_count') or 0:,}",
-            "Azure Rows": f"{state.azure.get('row_count') or 0:,}",
-            "Probe Count": f"#{state.probe_count}",
-        },
-    )
-    state.add_log(source="slack", account="WEBHOOK", message=f"Slack test ping: {'200 OK' if ok else 'FAILED'}", level="SUCCESS" if ok else "ERROR")
-    return {"sent": ok, "status": "200 OK" if ok else "Failed"}
 
 
 # Serve Compiled React Static Files

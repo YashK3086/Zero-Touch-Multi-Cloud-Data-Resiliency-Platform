@@ -35,9 +35,6 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [copiedHandle, setCopiedHandle] = useState(false);
-  const [slackWebhook, setSlackWebhook] = useState('');
-  const [slackTesting, setSlackTesting] = useState(false);
-  const [slackToast, setSlackToast] = useState(null);
   const [tableSearch, setTableSearch] = useState('');
 
   // Live telemetry from /api/* (ZERO hardcoded fake fixtures)
@@ -316,31 +313,6 @@ export default function App() {
     setTimeout(() => setCopiedHandle(false), 2000);
   };
 
-  const handleTestSlack = async () => {
-    setSlackTesting(true);
-    try {
-      const res = await fetch('/api/slack/test', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          message: 'Live verification ping from Snowflake Multi-Cloud Control Plane',
-          webhook_url: slackWebhook || undefined,
-        }),
-      });
-      if (res.ok) {
-        setSlackToast({ type: 'success', msg: 'Real Slack alert delivered (HTTP 200 OK)!' });
-      } else {
-        const err = await res.json().catch(() => ({}));
-        setSlackToast({ type: 'error', msg: err.detail || 'Slack webhook failed.' });
-      }
-    } catch {
-      setSlackToast({ type: 'error', msg: 'Backend unreachable on :8000' });
-    } finally {
-      setSlackTesting(false);
-      setTimeout(() => setSlackToast(null), 4500);
-    }
-  };
-
   const handleWatchdogToggle = async (newEnabled) => {
     try {
       await fetch('/api/actions/watchdog', {
@@ -531,49 +503,6 @@ export default function App() {
                 <span>Probe DNS</span>
               </button>
             </div>
-          </div>
-
-          {/* Slack Webhook Integration */}
-          <div className="enterprise-card p-3.5 bg-slate-50/50">
-            <div className="section-tag mb-1.5 flex items-center justify-between">
-              <span>Slack SRE Webhook</span>
-              <span
-                className={`text-[10px] font-bold px-1.5 py-0.5 rounded border ${
-                  status?.slack_connected
-                    ? 'text-emerald-700 bg-emerald-50 border-emerald-200'
-                    : 'text-slate-600 bg-slate-100 border-slate-200'
-                }`}
-              >
-                {status?.slack_connected ? 'Configured' : 'Unset'}
-              </span>
-            </div>
-            <div className="flex space-x-1.5 mt-2">
-              <input
-                type="text"
-                placeholder="Override Slack webhook..."
-                value={slackWebhook}
-                onChange={(e) => setSlackWebhook(e.target.value)}
-                className="w-full text-[11px] px-2.5 py-1.5 bg-white border border-slate-200 rounded text-slate-700 focus:outline-none focus:border-blue-500"
-              />
-              <button
-                onClick={handleTestSlack}
-                disabled={slackTesting}
-                title="Send real test ping to Slack"
-                className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-bold transition flex items-center justify-center shrink-0 disabled:opacity-50 cursor-pointer"
-              >
-                {slackTesting ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
-              </button>
-            </div>
-            {slackToast && (
-              <div
-                className={`mt-2 p-2 rounded text-[11px] font-semibold flex items-center space-x-1.5 ${
-                  slackToast.type === 'success' ? 'bg-emerald-50 text-emerald-800' : 'bg-red-50 text-red-800'
-                }`}
-              >
-                <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
-                <span>{slackToast.msg}</span>
-              </div>
-            )}
           </div>
 
           {/* Autonomous 3-Strike Watchdog Sentry & Git Push Automation */}
