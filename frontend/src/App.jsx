@@ -74,6 +74,55 @@ export default function App() {
   const consoleRef = useRef(null);
   const workflowBusyRef = useRef(false);
 
+  // Restore last workflow run from localStorage so refreshing the page NEVER resets the console!
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('sf_dr_last_run');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed && (parsed.summary || parsed.steps?.length > 0)) {
+          setWorkflowRun(parsed);
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  // Hydrate console from latest drill history if idle on initial page load
+  useEffect(() => {
+    if (drillHistory && drillHistory.length > 0 && workflowRun.state === 'idle') {
+      const latest = drillHistory[0];
+      setWorkflowRun((prev) => {
+        if (prev.state !== 'idle') return prev;
+        return {
+          ...prev,
+          runId: latest.id,
+          workflow: latest.operation,
+          title: `${latest.operation} (${latest.route})`,
+          state: 'success',
+          summary: `${latest.status}: ${latest.duration} · ${latest.rows} (${latest.operator})`,
+          steps: [
+            {
+              title: `${latest.operation} · Route: ${latest.route}`,
+              status: 'done',
+              duration_s: latest.duration,
+              logs: [
+                {
+                  ts: latest.timestamp,
+                  account: 'AUDIT',
+                  message: `Verified execution: ${latest.operation} ➔ ${latest.status}`,
+                  level: 'SUCCESS',
+                },
+              ],
+              expanded: false,
+            },
+          ],
+        };
+      });
+    }
+  }, [drillHistory, workflowRun.state]);
+
   const fetchTelemetry = useCallback(async () => {
     try {
       setLoading(true);
@@ -271,13 +320,21 @@ export default function App() {
           if (msg.reconcile) {
             setReconcileResult(msg.reconcile);
           }
-          setWorkflowRun((prev) => ({
-            ...prev,
-            state: 'success',
-            elapsedS: msg.total_s,
-            activeStepIdx: -1,
-            summary: msg.summary || `Completed in ${msg.total_s}s`,
-          }));
+          setWorkflowRun((prev) => {
+            const nextState = {
+              ...prev,
+              state: 'success',
+              elapsedS: msg.total_s,
+              activeStepIdx: -1,
+              summary: msg.summary || `Completed in ${msg.total_s}s`,
+            };
+            try {
+              localStorage.setItem('sf_dr_last_run', JSON.stringify(nextState));
+            } catch {
+              // ignore
+            }
+            return nextState;
+          });
           workflowBusyRef.current = false;
           es.close();
           esRef.current = null;

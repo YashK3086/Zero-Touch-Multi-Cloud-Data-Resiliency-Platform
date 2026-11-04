@@ -41,8 +41,10 @@ schema.json
 scripts/account_history.txt
 data/
 
-# Benchmark / chaos run artifacts
-reports/*.json
+# Media & Video screen recordings
+*.mp4
+*.mov
+*.mkv
 
 # IDE & System
 .vscode/
