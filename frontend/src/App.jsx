@@ -29,6 +29,7 @@ import {
   Circle,
   Loader2,
 } from 'lucide-react';
+import OnboardingModal from './components/OnboardingModal';
 
 export default function App() {
   const [apiOnline, setApiOnline] = useState(true);
@@ -36,6 +37,10 @@ export default function App() {
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [copiedHandle, setCopiedHandle] = useState(false);
   const [tableSearch, setTableSearch] = useState('');
+  const [showOnboarding, setShowOnboarding] = useState(false);
+  const [downloadingPdf, setDownloadingPdf] = useState(false);
+  const [readyToast, setReadyToast] = useState(null);
+  const hasPromptedOnboarding = useRef(false);
 
   // Live telemetry from /api/* (ZERO hardcoded fake fixtures)
   const [status, setStatus] = useState(null);
@@ -109,6 +114,38 @@ export default function App() {
     const id = setInterval(fetchTelemetry, 2500);
     return () => clearInterval(id);
   }, [autoRefresh, fetchTelemetry]);
+
+  // Auto-open SaaS Account Onboarding on initial load if no accounts configured
+  useEffect(() => {
+    if (status && status.is_configured === false && !hasPromptedOnboarding.current) {
+      hasPromptedOnboarding.current = true;
+      setShowOnboarding(true);
+    }
+  }, [status]);
+
+  const handleDownloadPdfReport = async () => {
+    try {
+      setDownloadingPdf(true);
+      const res = await fetch('/api/reports/pdf/latest-migrations');
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(errText || 'Failed to generate PDF report');
+      }
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `MultiCloud_DR_Audit_Certificate_${new Date().toISOString().slice(0, 10)}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (err) {
+      alert('Error downloading PDF audit certificate: ' + (err?.message || err));
+    } finally {
+      setDownloadingPdf(false);
+    }
+  };
 
   // Real-time 100ms stopwatch ticker ONLY while a real Snowflake workflow is actively executing
   useEffect(() => {
@@ -615,16 +652,80 @@ export default function App() {
               </h1>
             </div>
 
-            <div className="flex items-center space-x-3">
+            <div className="flex flex-wrap items-center gap-2.5">
+              <button
+                onClick={handleDownloadPdfReport}
+                disabled={downloadingPdf}
+                className="flex items-center space-x-1.5 bg-white hover:bg-slate-50 text-slate-800 border border-slate-300 px-3 py-1.5 rounded-lg text-xs font-bold shadow-xs transition cursor-pointer"
+                title="Download Executive DR Compliance Certificate & Audit for Latest 5 Migrations"
+              >
+                {downloadingPdf ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-600" />
+                ) : (
+                  <Download className="w-3.5 h-3.5 text-blue-600" />
+                )}
+                <span>📄 Export Audit PDF</span>
+              </button>
+
+              <button
+                onClick={() => setShowOnboarding(true)}
+                className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-bold shadow-xs transition cursor-pointer ${
+                  status?.is_configured
+                    ? 'bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300'
+                    : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white animate-pulse'
+                }`}
+                title="Configure Primary & Secondary Snowflake Accounts"
+              >
+                <Database className="w-3.5 h-3.5" />
+                <span>{status?.is_configured ? '🔗 Manage Accounts' : '⚡ Connect Accounts'}</span>
+              </button>
+
               <div className="flex items-center space-x-2 bg-emerald-50 text-emerald-800 border border-emerald-200 px-3 py-1.5 rounded-lg text-xs font-bold shadow-2xs">
                 <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                <span>Live Telemetry Active (2.5s)</span>
+                <span>{status?.is_configured ? 'Live Telemetry Active (2.5s)' : 'Standby Mode'}</span>
               </div>
             </div>
           </div>
         </header>
 
         <div className="p-6 space-y-6">
+          {/* SaaS Standby Banner when unconfigured */}
+          {status && status.is_configured === false && (
+            <div className="bg-gradient-to-r from-blue-950 via-indigo-950 to-slate-900 border border-blue-500/50 rounded-xl p-5 text-white shadow-lg flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+              <div className="space-y-1">
+                <div className="flex items-center space-x-2">
+                  <span className="px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[10px] font-black uppercase tracking-wider">
+                    SaaS Setup Required
+                  </span>
+                  <span className="text-xs text-slate-300 font-mono">Status: Awaiting Account Linking</span>
+                </div>
+                <h3 className="text-base font-black text-white">No Cloud Accounts Connected</h3>
+                <p className="text-xs text-slate-300 max-w-2xl leading-relaxed">
+                  Enter your Primary and Secondary Snowflake credentials to initiate continuous cross-cloud telemetry, automatic WAN replication, and zero-touch failover protection.
+                </p>
+              </div>
+              <button
+                onClick={() => setShowOnboarding(true)}
+                className="px-4 py-2.5 bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white rounded-lg text-xs font-black shadow-md transition flex items-center space-x-2 cursor-pointer shrink-0"
+              >
+                <Zap className="w-4 h-4 text-amber-300" />
+                <span>Link Primary & Secondary Accounts</span>
+              </button>
+            </div>
+          )}
+
+          {/* Toast Banner when accounts are primed and ready */}
+          {readyToast && (
+            <div className="bg-emerald-600 text-white px-5 py-3 rounded-xl shadow-lg flex items-center justify-between">
+              <div className="flex items-center space-x-2.5 text-xs font-bold">
+                <CheckCircle2 className="w-5 h-5 text-emerald-100" />
+                <span>{readyToast}</span>
+              </div>
+              <button onClick={() => setReadyToast(null)} className="text-emerald-100 hover:text-white font-black text-sm cursor-pointer">
+                ✕
+              </button>
+            </div>
+          )}
           {/* ============================================================== */}
           {/* GIT PUSH & AUTONOMOUS WATCHDOG DEPLOYMENT BANNER               */}
           {/* ============================================================== */}
@@ -1281,19 +1382,19 @@ export default function App() {
                 <div>
                   <h3 className="text-sm font-black text-slate-900 flex items-center space-x-1.5 mb-2">
                     <ArrowRightLeft className="w-4 h-4 text-amber-500" />
-                    <span>Emergency Failover to Azure (LQB72917)</span>
+                    <span>Emergency Failover to Standby ({azSnap?.locator || status?.replica_cloud || 'Secondary'})</span>
                   </h3>
                   <p className="text-xs text-slate-600 mb-4">
-                    Runs real <code className="font-mono">ALTER FAILOVER GROUP PRIMARY</code> + <code className="font-mono">ALTER CONNECTION PRIMARY</code> on Azure East US 2.
+                    Runs real <code className="font-mono">ALTER FAILOVER GROUP PRIMARY</code> + <code className="font-mono">ALTER CONNECTION PRIMARY</code> on Secondary account.
                   </p>
                 </div>
                 <button
-                  disabled={isWorkflowBusy}
+                  disabled={isWorkflowBusy || !status?.is_configured}
                   onClick={() => startLiveWorkflow('failover')}
                   className="w-full py-2.5 px-4 bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-white font-bold text-xs rounded-lg shadow-xs transition flex items-center justify-center space-x-2 cursor-pointer"
                 >
                   <ArrowRightLeft className="w-4 h-4" />
-                  <span>Promote Azure to PRIMARY (Live)</span>
+                  <span>Promote Standby to PRIMARY (Live)</span>
                 </button>
               </div>
 
@@ -1301,19 +1402,19 @@ export default function App() {
                 <div>
                   <h3 className="text-sm font-black text-slate-900 flex items-center space-x-1.5 mb-2">
                     <RotateCcw className="w-4 h-4 text-blue-500" />
-                    <span>Delta Catch-Up & Failback to AWS</span>
+                    <span>Delta Catch-Up & Failback to Primary ({awsSnap?.locator || status?.primary_cloud || 'Primary'})</span>
                   </h3>
                   <p className="text-xs text-slate-600 mb-4">
-                    Refreshes reverse delta onto <code className="font-mono">SF_AWS_PRIMARY (AWC63551)</code>, restores AWS to PRIMARY, and flips Anycast DNS back.
+                    Refreshes reverse delta onto Primary account, restores Primary authority, and flips Anycast DNS back.
                   </p>
                 </div>
                 <button
-                  disabled={isWorkflowBusy}
+                  disabled={isWorkflowBusy || !status?.is_configured}
                   onClick={() => startLiveWorkflow('failback')}
                   className="w-full py-2.5 px-4 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-bold text-xs rounded-lg shadow-xs transition flex items-center justify-center space-x-2 cursor-pointer"
                 >
                   <RotateCcw className="w-4 h-4" />
-                  <span>Restore AWS to PRIMARY (Live)</span>
+                  <span>Restore Primary to PRIMARY (Live)</span>
                 </button>
               </div>
             </div>
@@ -1326,11 +1427,11 @@ export default function App() {
                   <span>Live Full-Table HASH_AGG & Snowflake WAN Transfer History</span>
                 </h4>
                 <p className="text-[11px] text-slate-500">
-                  Executes real <code className="font-mono">SELECT COUNT(*), SUM(amount), HASH_AGG(...)</code> on both AWS & Azure + queries <code className="font-mono">REPLICATION_GROUP_REFRESH_HISTORY</code>.
+                  Executes real <code className="font-mono">SELECT COUNT(*), SUM(amount), HASH_AGG(...)</code> on both accounts + queries <code className="font-mono">REPLICATION_GROUP_REFRESH_HISTORY</code>.
                 </p>
               </div>
               <button
-                disabled={isWorkflowBusy}
+                disabled={isWorkflowBusy || !status?.is_configured}
                 onClick={() => startLiveWorkflow('reconcile')}
                 className="px-4 py-2 bg-slate-900 hover:bg-slate-800 disabled:opacity-50 text-white rounded-lg text-xs font-bold transition shadow-2xs shrink-0 cursor-pointer"
               >
@@ -1524,6 +1625,17 @@ export default function App() {
           </div>
         </div>
       </main>
+
+      <OnboardingModal
+        isOpen={showOnboarding}
+        onClose={() => setShowOnboarding(false)}
+        onSuccess={() => {
+          setShowOnboarding(false);
+          setReadyToast('🎉 Ready to Migrate & Protect! Primary and Secondary accounts linked, Anycast connection primed, and replication active.');
+          fetchTelemetry();
+        }}
+        initialStatus={status}
+      />
     </div>
   );
 }

@@ -33,9 +33,9 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     # --- Snowflake accounts -------------------------------------------------
-    snowflake_account_primary: str
-    snowflake_account_secondary: str
-    snowflake_user: str
+    snowflake_account_primary: str = ""
+    snowflake_account_secondary: str = ""
+    snowflake_user: str = ""
     snowflake_password: SecretStr | None = None
     snowflake_private_key_path: Path | None = None
     snowflake_role: str = "ACCOUNTADMIN"
@@ -76,9 +76,20 @@ class Settings(BaseSettings):
     @classmethod
     def _account_format(cls, v: str) -> str:
         v = v.strip().strip('"').strip("'")
+        if not v:
+            return ""
         if "-" not in v or v.startswith("<"):
             raise ValueError("Snowflake account must use ORGNAME-ACCOUNTNAME format")
         return v
+
+    @property
+    def is_configured(self) -> bool:
+        return bool(
+            self.snowflake_account_primary
+            and self.snowflake_account_secondary
+            and self.snowflake_user
+            and (self.snowflake_password or self.snowflake_private_key_path)
+        )
 
     # --- Derived ------------------------------------------------------------
     def _secret(self, s: SecretStr | None) -> str | None:
