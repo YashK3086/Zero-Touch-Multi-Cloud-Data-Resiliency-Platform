@@ -186,15 +186,19 @@ def provision_multi_cloud_dr(
     emit(2, "Configuring Primary Failover Group & Connection", "Establishing replication permission to secondary")
     with _get_sf_conn(primary) as conn_p:
         with conn_p.cursor() as cur:
-            cur.execute(f"""
-            CREATE FAILOVER GROUP IF NOT EXISTS {failover_group_name}
-                OBJECT_TYPES = (DATABASES)
-                ALLOWED_DATABASES = ({database_name})
-                ALLOWED_ACCOUNTS = ({p_org}.{p_acc}, {s_org}.{s_acc})
-                REPLICATION_SCHEDULE = '10 MINUTE'
-            """)
             try:
-                cur.execute(f"CREATE CONNECTION IF NOT EXISTS {redirect_connection_name} ENABLE_FAILOVER_TO_ACCOUNTS = ({s_org}.{s_acc})")
+                cur.execute(f"""
+                CREATE FAILOVER GROUP IF NOT EXISTS {failover_group_name}
+                    OBJECT_TYPES = DATABASES
+                    ALLOWED_DATABASES = {database_name}
+                    ALLOWED_ACCOUNTS = {p_org}.{p_acc}, {s_org}.{s_acc}
+                    REPLICATION_SCHEDULE = '10 MINUTE'
+                """)
+            except Exception as e:
+                logger.warning("Primary FG creation note: %s", e)
+
+            try:
+                cur.execute(f"CREATE CONNECTION IF NOT EXISTS {redirect_connection_name}")
             except Exception as e:
                 logger.warning("Connection creation note on primary: %s", e)
 
@@ -206,26 +210,29 @@ def provision_multi_cloud_dr(
         with conn_s.cursor() as cur:
             cur.execute(f"CREATE WAREHOUSE IF NOT EXISTS {warehouse_name} WAREHOUSE_SIZE = 'XSMALL' AUTO_SUSPEND = 60 INITIALLY_SUSPENDED = FALSE")
 
-            # Drop old unlinked failover group replica if exists
-            try:
-                cur.execute(f"DROP FAILOVER GROUP IF EXISTS {failover_group_name}")
-            except Exception as e:
-                logger.warning("Secondary drop FG note: %s", e)
+            # Check if failover group already exists on secondary
+            cur.execute("SHOW FAILOVER GROUPS")
+            fgs = [r[3] for r in cur.fetchall()]
+            if failover_group_name not in fgs:
+                try:
+                    cur.execute(f"""
+                    CREATE FAILOVER GROUP IF NOT EXISTS {failover_group_name}
+                        AS REPLICA OF {p_org}.{p_acc}.{failover_group_name}
+                    """)
+                except Exception as e:
+                    logger.warning("Secondary FG replica creation note: %s", e)
 
-            # Create secondary failover group replica
-            cur.execute(f"""
-            CREATE FAILOVER GROUP IF NOT EXISTS {failover_group_name}
-                AS REPLICA OF {p_org}.{p_acc}.{failover_group_name}
-            """)
-
-            # Create secondary connection replica
-            try:
-                cur.execute(f"""
-                CREATE CONNECTION IF NOT EXISTS {redirect_connection_name}
-                    AS REPLICA OF {p_org}.{p_acc}.{redirect_connection_name}
-                """)
-            except Exception as e:
-                logger.warning("Secondary connection replica creation note: %s", e)
+            # Check if connection already exists on secondary
+            cur.execute("SHOW CONNECTIONS")
+            conns = [r[3] for r in cur.fetchall()]
+            if redirect_connection_name not in conns:
+                try:
+                    cur.execute(f"""
+                    CREATE CONNECTION IF NOT EXISTS {redirect_connection_name}
+                        AS REPLICA OF {p_org}.{p_acc}.{redirect_connection_name}
+                    """)
+                except Exception as e:
+                    logger.warning("Secondary connection replica creation note: %s", e)
 
     # -------------------------------------------------------------------------
     # STEP 4: Trigger Initial WAN Delta Sync
@@ -234,7 +241,13 @@ def provision_multi_cloud_dr(
     with _get_sf_conn(secondary) as conn_s:
         with conn_s.cursor() as cur:
             t_sync = time.perf_counter()
-            cur.execute(f"ALTER FAILOVER GROUP {failover_group_name} REFRESH")
+            try:
+                cur.execute(f"ALTER FAILOVER GROUP {failover_group_name} REFRESH")
+            except Exception as e:
+                if "already being refreshed" in str(e).lower():
+                    logger.info("Replication group refresh is already in progress on Azure")
+                else:
+                    logger.warning("WAN refresh note: %s", e)
             sync_duration_s = round(time.perf_counter() - t_sync, 2)
             logger.info("Initial WAN sync completed in %.2fs", sync_duration_s)
 
@@ -244,6 +257,7 @@ def provision_multi_cloud_dr(
     emit(5, "Verifying Zero Data Loss & Hash Parity", "Checking RPO = 0 across clouds")
     with _get_sf_conn(primary) as conn_p, _get_sf_conn(secondary) as conn_s:
         with conn_p.cursor() as cur_p, conn_s.cursor() as cur_s:
+            cur_p.execute(f"USE WAREHOUSE {warehouse_name}")
             cur_p.execute(f"SELECT COUNT(*), HASH_AGG(step, type, amount, nameOrig) FROM {database_name}.DR_STAGING.FINANCIAL_TRANSACTIONS")
             p_cnt, p_hash = cur_p.fetchone()
 
