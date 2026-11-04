@@ -50,9 +50,9 @@ if (-not $SkipTerraform) {
     try {
         terraform init -backend=false -input=false -no-color | Out-Null
         Write-Host "      -> Terraform initialized cleanly." -ForegroundColor DarkGray
-        # Apply core database, replication failover group, and redirect connection
-        terraform apply -target='snowflake_resource_monitor.dr_credit_guard' -target='snowflake_warehouse.dr_warehouse' -target='snowflake_resource_monitor.dr_credit_guard_secondary' -target='snowflake_warehouse.dr_warehouse_secondary' -target='snowflake_database.dr_database' -target='snowflake_schema.dr_schema' -target='snowflake_failover_group.dr_primary_failover_group' -target='snowflake_failover_group.dr_secondary_failover_group' -target='snowflake_primary_connection.dr_primary_connection' -target='snowflake_secondary_connection.dr_secondary_connection' -auto-approve -no-color 2>&1 | Out-Null
-        Write-Host "      -> Core Snowflake DR Infrastructure Verified." -ForegroundColor Green
+        # Apply core database, replication failover group, redirect connection, and S3 stage
+        terraform apply -target='aws_s3_bucket.sf_primary_stage' -target='aws_s3_bucket_ownership_controls.sf_primary_stage' -target='aws_s3_bucket_public_access_block.sf_primary_stage' -target='aws_s3_bucket_server_side_encryption_configuration.sf_primary_stage' -target='aws_s3_bucket_lifecycle_configuration.sf_primary_stage' -target='aws_iam_policy.snowflake_s3_stage_policy' -target='snowflake_resource_monitor.dr_credit_guard' -target='snowflake_warehouse.dr_warehouse' -target='snowflake_resource_monitor.dr_credit_guard_secondary' -target='snowflake_warehouse.dr_warehouse_secondary' -target='snowflake_database.dr_database' -target='snowflake_schema.dr_schema' -target='snowflake_stage.dr_s3_stage' -target='snowflake_failover_group.dr_primary_failover_group' -target='snowflake_failover_group.dr_secondary_failover_group' -target='snowflake_primary_connection.dr_primary_connection' -target='snowflake_secondary_connection.dr_secondary_connection' -auto-approve -no-color 2>&1 | Out-Null
+        Write-Host "      -> Core Snowflake & AWS S3 Infrastructure Verified." -ForegroundColor Green
     } catch {
         Write-Host "      -> Terraform verification note: $($_.Exception.Message)" -ForegroundColor Yellow
     } finally {
