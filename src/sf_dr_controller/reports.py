@@ -258,3 +258,4 @@ def generate_audit_pdf(
 
     full_pdf = ("".join(pdf_parts) + xref_str + trailer).encode("latin-1")
     return full_pdf
+

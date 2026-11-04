@@ -11,6 +11,9 @@ dependencies = [
     "snowflake-connector-python>=3.12",
     "pydantic>=2.6",
     "pydantic-settings>=2.2",
+    "fastapi>=0.110.0",
+    "uvicorn[standard]>=0.28.0",
+    "starlette>=0.36.0",
 ]
 
 [project.optional-dependencies]

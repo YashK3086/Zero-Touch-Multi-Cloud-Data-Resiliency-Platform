@@ -104,13 +104,32 @@ if (-not $SkipK8s) {
 # STAGE 5: Launch FastAPI DR Control Plane & Open Executive Web UI
 # -------------------------------------------------------------------------
 Write-Host "[4/6] 🌐 Ensuring FastAPI DR Control Plane is active on Port 8080..." -ForegroundColor Green
+$needsRestart = $true
 $conn = Get-NetTCPConnection -LocalPort 8080 -State Listen -ErrorAction SilentlyContinue
-if (-not $conn) {
+if ($conn) {
+    try {
+        $check = Invoke-RestMethod -Uri "http://127.0.0.1:8080/api/onboarding/status" -TimeoutSec 2 -ErrorAction Stop
+        if ($check) {
+            $needsRestart = $false
+            Write-Host "      -> Control Plane active on port 8080 with verified SaaS endpoints." -ForegroundColor DarkGray
+        }
+    } catch {
+        $needsRestart = $true
+    }
+}
+
+if ($needsRestart) {
+    Write-Host "      -> Refreshing FastAPI DR Control Plane on Port 8080..." -ForegroundColor Cyan
+    if ($conn) {
+        $pids = $conn | Select-Object -ExpandProperty OwningProcess -Unique
+        foreach ($p in $pids) {
+            Stop-Process -Id $p -Force -ErrorAction SilentlyContinue
+        }
+        Start-Sleep -Seconds 1
+    }
     Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd '$RootDir'; . .\scripts\Load-Env.ps1 -Quiet; .\.venv\Scripts\python.exe -m uvicorn sf_dr_controller.api:app --host 127.0.0.1 --port 8080" -WindowStyle Minimized
     Start-Sleep -Seconds 3
-    Write-Host "      -> Started FastAPI DR Control Plane on http://127.0.0.1:8080/." -ForegroundColor Green
-} else {
-    Write-Host "      -> Control Plane active on port 8080." -ForegroundColor DarkGray
+    Write-Host "      -> Started latest FastAPI DR Control Plane on http://127.0.0.1:8080/." -ForegroundColor Green
 }
 
 # -------------------------------------------------------------------------

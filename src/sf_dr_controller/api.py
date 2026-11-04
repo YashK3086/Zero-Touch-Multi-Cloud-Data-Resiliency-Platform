@@ -1950,6 +1950,7 @@ class ProvisionOnboardingRequest(BaseModel):
 
 
 @app.get("/api/onboarding/status")
+@app.get("/api/onboarding/status/")
 def get_onboarding_status() -> dict[str, Any]:
     """Returns whether multi-cloud accounts have been linked and configured."""
     settings = Settings()
@@ -1966,6 +1967,7 @@ def get_onboarding_status() -> dict[str, Any]:
 
 
 @app.post("/api/onboarding/verify")
+@app.post("/api/onboarding/verify/")
 def verify_onboarding_credentials(req: VerifyOnboardingRequest) -> dict[str, Any]:
     """Tests live connectivity to primary and secondary accounts before provisioning."""
     try:
@@ -1996,6 +1998,7 @@ def verify_onboarding_credentials(req: VerifyOnboardingRequest) -> dict[str, Any
 
 
 @app.post("/api/onboarding/provision")
+@app.post("/api/onboarding/provision/")
 def provision_onboarding_pipeline(req: ProvisionOnboardingRequest) -> dict[str, Any]:
     """Zero-Touch 1-Click Multi-Cloud Provisioning: Warehouses, Failover Groups, Connections & WAN Sync."""
     try:
