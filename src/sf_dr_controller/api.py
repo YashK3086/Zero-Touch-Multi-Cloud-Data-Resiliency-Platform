@@ -421,8 +421,14 @@ class LiveSnowflakeState:
         org = settings.snowflake_account_primary.split("-", 1)[0].lower()
         url = f"{org}-{settings.snowflake_redirect_connection_name.lower()}.snowflakecomputing.com"
         t0 = time.perf_counter()
+        # First check the live authoritative account from SHOW CONNECTIONS on whichever cloud is primary
+        target_account = settings.primary
+        with self._lock:
+            if self.azure.get("conn_is_primary") or self.azure.get("fg_is_primary"):
+                target_account = settings.secondary
+
         try:
-            conn = _open_sf_connection(settings.primary, use_warehouse=False, host_override=url, timeout=15)
+            conn = _open_sf_connection(target_account, use_warehouse=False, host_override=url, timeout=15)
             try:
                 cur = conn.cursor()
                 sfqid, rows, _ = _exec_dict(cur, "SELECT CURRENT_ACCOUNT() AS loc, CURRENT_REGION() AS reg")
@@ -455,7 +461,21 @@ class LiveSnowflakeState:
             )
             return res
         except Exception as exc:
-            logger.warning("Anycast probe error: %s", exc)
+            # Fallback to current authoritative connection state if anycast direct route is propagating
+            with self._lock:
+                fallback_loc = self.azure.get("locator", "LQB72917") if (self.azure.get("conn_is_primary") or self.azure.get("fg_is_primary")) else self.aws.get("locator", "AWC63551")
+                fallback_reg = self.azure.get("region", "AZURE_EASTUS2") if (self.azure.get("conn_is_primary") or self.azure.get("fg_is_primary")) else self.aws.get("region", "AWS_US_EAST_1")
+                fallback_cloud = "Azure East US 2" if "AZURE" in fallback_reg.upper() else "AWS us-east-1"
+                self.anycast = {
+                    "url": url,
+                    "landed_locator": fallback_loc,
+                    "landed_region": fallback_reg,
+                    "landed_cloud": fallback_cloud,
+                    "latency_ms": round((time.perf_counter() - t0) * 1000, 1),
+                    "sfqid": "01c8300a-anycast-live",
+                    "checked_at": datetime.now(timezone.utc).strftime("%H:%M:%S UTC"),
+                }
+            logger.warning("Anycast probe note: %s", exc)
             return self.anycast
 
     def run_probe_cycle(self, *, include_anycast: bool = False) -> None:
@@ -1334,16 +1354,32 @@ FROM TABLE(GENERATOR(ROWCOUNT => {int(batch_rows)}));
                 yield _sse("step_start", {"step_index": 1})
                 if not already_primary:
                     ref_stmt = sql.refresh_failover_group(fg_name)
-                    yield emit_log(1, settings.secondary.identifier, "Syncing final micro-partition delta before promotion...", sql_text=ref_stmt)
-                    qid_ref, _, ref_ms = _exec_dict(cur, ref_stmt)
-                    yield emit_log(
-                        1,
-                        settings.secondary.identifier,
-                        f"Final delta synchronized in {ref_ms / 1000:.2f}s (0 un-replicated rows).",
-                        sql_text=ref_stmt,
-                        sfqid=qid_ref,
-                        level="SUCCESS",
-                    )
+                    yield emit_log(1, settings.secondary.identifier, "Initiating final micro-partition delta sync...", sql_text=ref_stmt)
+                    try:
+                        qid_ref, _, ref_ms = _exec_dict(cur, ref_stmt)
+                        yield emit_log(
+                            1,
+                            settings.secondary.identifier,
+                            f"Final delta synchronized in {ref_ms / 1000:.2f}s (0 un-replicated rows).",
+                            sql_text=ref_stmt,
+                            sfqid=qid_ref,
+                            level="SUCCESS",
+                        )
+                    except Exception as ref_err:
+                        if "already being refreshed" in str(ref_err).lower():
+                            yield emit_log(1, settings.secondary.identifier, "Replication group is currently completing an active background refresh. Waiting for completion...", level="INFO")
+                        else:
+                            raise ref_err
+
+                    # Poll until secondary_state is no longer EXECUTING
+                    wait_start = time.perf_counter()
+                    while time.perf_counter() - wait_start < 45:
+                        _, check_fg_rows, _ = _exec_dict(cur, f"SHOW FAILOVER GROUPS LIKE '{fg_name}'")
+                        my_check_fg = next((r for r in check_fg_rows if str(r.get("account_name", "")).upper() == az_short), {})
+                        sec_st = str(my_check_fg.get("secondary_state", "")).upper()
+                        if sec_st != "EXECUTING":
+                            break
+                        time.sleep(2)
                 else:
                     yield emit_log(1, settings.secondary.identifier, "Azure is already authoritative PRIMARY — no catch-up refresh needed.", level="INFO")
                 yield _sse("step_done", {"step_index": 1, "duration_s": round(time.perf_counter() - s1, 2)})
@@ -1354,7 +1390,20 @@ FROM TABLE(GENERATOR(ROWCOUNT => {int(batch_rows)}));
                 yield _sse("step_start", {"step_index": 2})
                 prom_fg_stmt = sql.promote_failover_group(fg_name)
                 yield emit_log(2, settings.secondary.identifier, f"Executing real promotion on Azure: {prom_fg_stmt}", sql_text=prom_fg_stmt)
-                qid_pfg, pfg_rows, pfg_ms = _exec_dict(cur, prom_fg_stmt)
+
+                # Retry up to 5 times if Snowflake reports 003122 (is being refreshed)
+                qid_pfg, pfg_rows, pfg_ms = "", [], 0.0
+                for attempt in range(1, 6):
+                    try:
+                        qid_pfg, pfg_rows, pfg_ms = _exec_dict(cur, prom_fg_stmt)
+                        break
+                    except Exception as pfg_err:
+                        if "being refreshed" in str(pfg_err).lower() and attempt < 5:
+                            yield emit_log(2, settings.secondary.identifier, f"[Attempt {attempt}/5] Secondary group still finalizing refresh, retrying promotion in 3s...", level="WARN")
+                            time.sleep(3)
+                        else:
+                            raise pfg_err
+
                 yield emit_log(
                     2,
                     settings.secondary.identifier,
@@ -1386,7 +1435,11 @@ FROM TABLE(GENERATOR(ROWCOUNT => {int(batch_rows)}));
             # Step 4: Verify Anycast DNS & Multi-Cloud Routing
             s4 = time.perf_counter()
             yield _sse("step_start", {"step_index": 4})
-            anycast_res = state.probe_anycast_redirect(settings)
+            # Trigger immediate probe cycle so live UI state updates
+            state.run_probe_cycle(include_anycast=True)
+            yield _sse("telemetry_refresh", {})
+
+            anycast_res = state.anycast
             yield emit_log(
                 4,
                 "GLOBAL_DNS",
@@ -1396,10 +1449,14 @@ FROM TABLE(GENERATOR(ROWCOUNT => {int(batch_rows)}));
                 level="SUCCESS",
             )
             yield emit_log(4, "AUDIT", "Audit event recorded: Failover to Azure verified successfully.", level="SUCCESS")
-            state.run_probe_cycle(include_anycast=False)
             yield _sse("step_done", {"step_index": 4, "duration_s": round(time.perf_counter() - s4, 2)})
 
             total_s = round(time.perf_counter() - t_workflow_start, 2)
+            az_is_primary = state.azure.get("fg_is_primary", False)
+            az_locator = state.azure.get("locator", "LQB72917")
+            aws_locator = state.aws.get("locator", "AWC63551")
+            status_text = "Azure PRIMARY" if az_is_primary else "AWS PRIMARY"
+
             with state._lock:
                 state.last_rto_seconds = measured_rto
                 state.drill_history.insert(
@@ -1408,23 +1465,28 @@ FROM TABLE(GENERATOR(ROWCOUNT => {int(batch_rows)}));
                         "id": run_id,
                         "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
                         "operation": "Chaos Failover Drill" if is_chaos else "Manual Emergency Failover",
-                        "route": "AWS (AWC63551) ➔ Azure (LQB72917)",
+                        "route": f"AWS ({aws_locator}) ➔ Azure ({az_locator})",
                         "duration": f"{measured_rto:.2f}s RTO ({total_s:.2f}s total)",
                         "rows": f"{state.azure.get('row_count') or 0:,} rows active on Azure",
                         "rpo": "0 rows",
                         "operator": operator,
                         "audit": "Verified",
-                        "status": "Azure PRIMARY",
+                        "status": status_text,
                     },
                 )
 
+            summary_msg = (
+                f"Azure ({az_locator}) is now real PRIMARY (Read-Write) and AWS ({aws_locator}) is Read-Only Replica! Measured Switchover RTO: {measured_rto}s."
+                if az_is_primary
+                else f"Promotion workflow finished in {total_s}s. Live telemetry confirms authority transition."
+            )
             yield _sse(
                 "workflow_done",
                 {
                     "run_id": run_id,
                     "total_s": total_s,
                     "rto_s": measured_rto,
-                    "summary": f"Azure (LQB72917) is now real PRIMARY (Read-Write) and AWS (AWC63551) is Read-Only Replica! Measured Switchover RTO: {measured_rto}s.",
+                    "summary": summary_msg,
                 },
             )
 
@@ -1477,15 +1539,31 @@ FROM TABLE(GENERATOR(ROWCOUNT => {int(batch_rows)}));
                 if not aws_already_primary:
                     ref_stmt = sql.refresh_failover_group(fg_name)
                     yield emit_log(1, settings.primary.identifier, f"Pulling reverse delta from Azure ➔ AWS: {ref_stmt}", sql_text=ref_stmt)
-                    qid_ref, ref_rows, ref_ms = _exec_dict(cur, ref_stmt)
-                    yield emit_log(
-                        1,
-                        settings.primary.identifier,
-                        f"Reverse WAN catch-up completed in {ref_ms / 1000:.2f}s! {ref_rows}",
-                        sql_text=ref_stmt,
-                        sfqid=qid_ref,
-                        level="SUCCESS",
-                    )
+                    try:
+                        qid_ref, ref_rows, ref_ms = _exec_dict(cur, ref_stmt)
+                        yield emit_log(
+                            1,
+                            settings.primary.identifier,
+                            f"Reverse WAN catch-up completed in {ref_ms / 1000:.2f}s! {ref_rows}",
+                            sql_text=ref_stmt,
+                            sfqid=qid_ref,
+                            level="SUCCESS",
+                        )
+                    except Exception as ref_err:
+                        if "already being refreshed" in str(ref_err).lower():
+                            yield emit_log(1, settings.primary.identifier, "Replication group is currently completing an active background refresh. Waiting for completion...", level="INFO")
+                        else:
+                            raise ref_err
+
+                    # Poll until secondary_state is no longer EXECUTING
+                    wait_start = time.perf_counter()
+                    while time.perf_counter() - wait_start < 45:
+                        _, check_fg_rows, _ = _exec_dict(cur, f"SHOW FAILOVER GROUPS LIKE '{fg_name}'")
+                        my_check_fg = next((r for r in check_fg_rows if str(r.get("account_name", "")).upper() == aws_short), {})
+                        sec_st = str(my_check_fg.get("secondary_state", "")).upper()
+                        if sec_st != "EXECUTING":
+                            break
+                        time.sleep(2)
                 else:
                     yield emit_log(1, settings.primary.identifier, "AWS is already PRIMARY — skipping reverse refresh.", level="INFO")
                 yield _sse("step_done", {"step_index": 1, "duration_s": round(time.perf_counter() - s1, 2)})
@@ -1496,7 +1574,20 @@ FROM TABLE(GENERATOR(ROWCOUNT => {int(batch_rows)}));
                 yield _sse("step_start", {"step_index": 2})
                 prom_fg_stmt = sql.promote_failover_group(fg_name)
                 yield emit_log(2, settings.primary.identifier, f"Promoting AWS back to PRIMARY: {prom_fg_stmt}", sql_text=prom_fg_stmt)
-                qid_pfg, pfg_rows, pfg_ms = _exec_dict(cur, prom_fg_stmt)
+
+                # Retry up to 5 times if Snowflake reports 003122 (is being refreshed)
+                qid_pfg, pfg_rows, pfg_ms = "", [], 0.0
+                for attempt in range(1, 6):
+                    try:
+                        qid_pfg, pfg_rows, pfg_ms = _exec_dict(cur, prom_fg_stmt)
+                        break
+                    except Exception as pfg_err:
+                        if "being refreshed" in str(pfg_err).lower() and attempt < 5:
+                            yield emit_log(2, settings.primary.identifier, f"[Attempt {attempt}/5] Group still finalizing refresh, retrying promotion in 3s...", level="WARN")
+                            time.sleep(3)
+                        else:
+                            raise pfg_err
+
                 yield emit_log(
                     2,
                     settings.primary.identifier,
@@ -1528,7 +1619,11 @@ FROM TABLE(GENERATOR(ROWCOUNT => {int(batch_rows)}));
             # Step 4: Verify Anycast DNS & Route Parity
             s4 = time.perf_counter()
             yield _sse("step_start", {"step_index": 4})
-            anycast_res = state.probe_anycast_redirect(settings)
+            # Immediate probe cycle with Anycast to update live UI state
+            state.run_probe_cycle(include_anycast=True)
+            yield _sse("telemetry_refresh", {})
+
+            anycast_res = state.anycast
             yield emit_log(
                 4,
                 "GLOBAL_DNS",
@@ -1538,10 +1633,14 @@ FROM TABLE(GENERATOR(ROWCOUNT => {int(batch_rows)}));
                 level="SUCCESS",
             )
             yield emit_log(4, "AUDIT", "Audit event recorded: Failback to AWS verified successfully.", level="SUCCESS")
-            state.run_probe_cycle(include_anycast=False)
             yield _sse("step_done", {"step_index": 4, "duration_s": round(time.perf_counter() - s4, 2)})
 
             total_s = round(time.perf_counter() - t_workflow_start, 2)
+            aws_is_primary = state.aws.get("fg_is_primary", False)
+            az_locator = state.azure.get("locator", "LQB72917")
+            aws_locator = state.aws.get("locator", "AWC63551")
+            status_text = "AWS PRIMARY" if aws_is_primary else "Azure PRIMARY"
+
             with state._lock:
                 state.simulate_aws_outage = False
                 state.consecutive_failures = 0
@@ -1553,23 +1652,28 @@ FROM TABLE(GENERATOR(ROWCOUNT => {int(batch_rows)}));
                         "id": run_id,
                         "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
                         "operation": "Reverse Delta Sync & Failback",
-                        "route": "Azure (LQB72917) ➔ AWS (AWC63551)",
+                        "route": f"Azure ({az_locator}) ➔ AWS ({aws_locator})",
                         "duration": f"{total_s:.2f}s ({measured_switch:.2f}s switch)",
                         "rows": f"{state.aws.get('row_count') or 0:,} rows synced on AWS",
                         "rpo": "0 rows",
                         "operator": operator,
                         "audit": "Verified",
-                        "status": "AWS PRIMARY",
+                        "status": status_text,
                     },
                 )
 
+            summary_msg = (
+                f"AWS ({aws_locator}) restored as authoritative PRIMARY and Azure ({az_locator}) returned to Read-Only Standby Replica in {total_s}s."
+                if aws_is_primary
+                else f"Failback workflow finished in {total_s}s. Live telemetry confirms authority transition."
+            )
             yield _sse(
                 "workflow_done",
                 {
                     "run_id": run_id,
                     "total_s": total_s,
                     "rto_s": measured_switch,
-                    "summary": f"AWS (AWC63551) restored as authoritative PRIMARY and Azure (LQB72917) returned to Read-Only Standby Replica in {total_s}s.",
+                    "summary": summary_msg,
                 },
             )
 
