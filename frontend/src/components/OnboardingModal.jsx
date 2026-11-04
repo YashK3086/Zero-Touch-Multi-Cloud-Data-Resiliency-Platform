@@ -17,14 +17,14 @@ import {
 export default function OnboardingModal({ isOpen, onClose, onSuccess, initialStatus }) {
   const [primaryAccount, setPrimaryAccount] = useState('NNFCDXY-SF_AWS_PRIMARY');
   const [primaryUser, setPrimaryUser] = useState('YASHSNOW20');
-  const [primaryPassword, setPrimaryPassword] = useState('SecurePassword123!');
+  const [primaryPassword, setPrimaryPassword] = useState('Atlas20@200605');
   const [primaryRole, setPrimaryRole] = useState('ACCOUNTADMIN');
   const [primaryCloud, setPrimaryCloud] = useState('AWS');
   const [databaseName, setDatabaseName] = useState('SF_DR_DEMO_DB');
 
   const [secondaryAccount, setSecondaryAccount] = useState('NNFCDXY-SF_AZURE_DR');
   const [secondaryUser, setSecondaryUser] = useState('YASHSNOW20');
-  const [secondaryPassword, setSecondaryPassword] = useState('SecurePassword123!');
+  const [secondaryPassword, setSecondaryPassword] = useState('Atlas20@200605');
   const [secondaryRole, setSecondaryRole] = useState('ACCOUNTADMIN');
   const [secondaryCloud, setSecondaryCloud] = useState('Azure');
   const [warehouseName, setWarehouseName] = useState('DR_CONTROLLER_WH');
@@ -56,13 +56,13 @@ export default function OnboardingModal({ isOpen, onClose, onSuccess, initialSta
     } else {
       setPrimaryAccount('NNFCDXY-SF_AWS_PRIMARY');
       setPrimaryUser('YASHSNOW20');
-      setPrimaryPassword('SecurePassword123!');
+      setPrimaryPassword('Atlas20@200605');
       setPrimaryCloud('AWS');
       setDatabaseName('SF_DR_DEMO_DB');
 
       setSecondaryAccount('NNFCDXY-SF_AZURE_DR');
       setSecondaryUser('YASHSNOW20');
-      setSecondaryPassword('SecurePassword123!');
+      setSecondaryPassword('Atlas20@200605');
       setSecondaryCloud('Azure');
       setWarehouseName('DR_CONTROLLER_WH');
     }

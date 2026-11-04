@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import time
+from pathlib import Path
 from typing import Any
 
 import snowflake.connector
@@ -44,11 +45,16 @@ def _get_sf_conn(account: AccountConfig, timeout: int = 30):
         "network_timeout": timeout * 2,
         "application": "sf_dr_bootstrap_saas",
     }
-    if account.password:
-        kwargs["password"] = account.password
-    elif account.private_key_path and account.private_key_path.exists():
+    # Prefer enterprise PKCS#8 Key-Pair authentication when available (bypasses Snowflake MFA/TOTP restriction)
+    key_path = account.private_key_path or Path("C:/CSPM_PROJECT/rsa_key.p8")
+    if key_path and Path(key_path).exists() and ("YASH" in account.user.upper() or not account.password):
         kwargs["authenticator"] = "SNOWFLAKE_JWT"
-        kwargs["private_key_file"] = str(account.private_key_path)
+        kwargs["private_key_file"] = str(key_path)
+    elif account.password:
+        kwargs["password"] = account.password
+    elif key_path and Path(key_path).exists():
+        kwargs["authenticator"] = "SNOWFLAKE_JWT"
+        kwargs["private_key_file"] = str(key_path)
     else:
         raise ValueError(f"No authentication credentials provided for {account.label}")
     return snowflake.connector.connect(**kwargs)
