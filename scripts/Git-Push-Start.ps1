@@ -103,33 +103,15 @@ if (-not $SkipK8s) {
 # -------------------------------------------------------------------------
 # STAGE 5: Launch FastAPI DR Control Plane & Open Executive Web UI
 # -------------------------------------------------------------------------
-Write-Host "[4/6] 🌐 Ensuring FastAPI DR Control Plane is active on Port 8080..." -ForegroundColor Green
-$needsRestart = $true
-$conn = Get-NetTCPConnection -LocalPort 8080 -State Listen -ErrorAction SilentlyContinue
-if ($conn) {
-    try {
-        $check = Invoke-RestMethod -Uri "http://127.0.0.1:8080/api/onboarding/status" -TimeoutSec 2 -ErrorAction Stop
-        if ($check) {
-            $needsRestart = $false
-            Write-Host "      -> Control Plane active on port 8080 with verified SaaS endpoints." -ForegroundColor DarkGray
-        }
-    } catch {
-        $needsRestart = $true
-    }
-}
-
-if ($needsRestart) {
-    Write-Host "      -> Refreshing FastAPI DR Control Plane on Port 8080..." -ForegroundColor Cyan
-    if ($conn) {
-        $pids = $conn | Select-Object -ExpandProperty OwningProcess -Unique
-        foreach ($p in $pids) {
-            Stop-Process -Id $p -Force -ErrorAction SilentlyContinue
-        }
-        Start-Sleep -Seconds 1
-    }
-    Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd '$RootDir'; . .\scripts\Load-Env.ps1 -Quiet; .\.venv\Scripts\python.exe -m uvicorn sf_dr_controller.api:app --host 127.0.0.1 --port 8080" -WindowStyle Minimized
+$TargetPort = 8000
+Write-Host "[4/6] 🌐 Ensuring FastAPI DR Control Plane is active on Port $TargetPort..." -ForegroundColor Green
+$conn = Get-NetTCPConnection -LocalPort $TargetPort -State Listen -ErrorAction SilentlyContinue
+if (-not $conn) {
+    Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd '$RootDir'; . .\scripts\Load-Env.ps1 -Quiet; .\.venv\Scripts\python.exe -m uvicorn sf_dr_controller.api:app --host 127.0.0.1 --port $TargetPort" -WindowStyle Minimized
     Start-Sleep -Seconds 3
-    Write-Host "      -> Started latest FastAPI DR Control Plane on http://127.0.0.1:8080/." -ForegroundColor Green
+    Write-Host "      -> Started FastAPI DR Control Plane on http://127.0.0.1:$TargetPort/." -ForegroundColor Green
+} else {
+    Write-Host "      -> Control Plane active on port $TargetPort." -ForegroundColor DarkGray
 }
 
 # -------------------------------------------------------------------------
@@ -138,14 +120,14 @@ if ($needsRestart) {
 Write-Host "[5/6] 🛡️  Arming Autonomous 3-Strike Watchdog & Launching Dashboard..." -ForegroundColor Green
 try {
     $body = @{ mode = $Mode } | ConvertTo-Json
-    Invoke-RestMethod -Uri "http://127.0.0.1:8080/api/webhooks/git-push" -Method POST -ContentType "application/json" -Body $body -TimeoutSec 15 | Out-Null
+    Invoke-RestMethod -Uri "http://127.0.0.1:$TargetPort/api/webhooks/git-push" -Method POST -ContentType "application/json" -Body $body -TimeoutSec 15 | Out-Null
     Write-Host "      -> Watchdog armed: Mode = $($Mode.ToUpper()). Auto-Failback enabled." -ForegroundColor Cyan
 } catch {
     Write-Host "      -> Probe trigger notification sent." -ForegroundColor DarkGray
 }
 
-Write-Host "      -> Opening Executive UI Dashboard at http://127.0.0.1:8080/..." -ForegroundColor Green
-Start-Process "http://127.0.0.1:8080/"
+Write-Host "      -> Opening Executive UI Dashboard at http://127.0.0.1:$TargetPort/..." -ForegroundColor Green
+Start-Process "http://127.0.0.1:$TargetPort/"
 
 if (-not $SkipGitPush) {
     Write-Host "[6/6] 🚀 Executing 'git push' to trigger GitHub Actions Cloud CI/CD Pipeline..." -ForegroundColor Green
