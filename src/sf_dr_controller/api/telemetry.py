@@ -432,3 +432,11 @@ def get_live_logs() -> list[dict[str, Any]]:
 def get_drill_history() -> list[dict[str, Any]]:
     with state._lock:
         return list(state.drill_history)
+
+
+@router.get("/api/workflows/last-run")
+@router.get("/api/workflows/last-run/")
+def get_last_workflow_run() -> dict[str, Any] | None:
+    with state._lock:
+        return state.last_workflow_run
+

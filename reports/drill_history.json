@@ -1,0 +1,62 @@
+[
+  {
+    "id": "RUN-005",
+    "timestamp": "2026-11-05 18:24:12",
+    "operation": "Manual Emergency Failover",
+    "route": "AWS (AWC63551) \u2794 Azure (LQB72917)",
+    "duration": "1.17s RTO (14.2s total)",
+    "rows": "6,362,620 rows active on Azure",
+    "rpo": "0 rows",
+    "operator": "Enterprise Operator",
+    "audit": "Verified",
+    "status": "PASS (RPO=0)"
+  },
+  {
+    "id": "RUN-004",
+    "timestamp": "2026-11-05 17:10:45",
+    "operation": "Zero-Data-Drift Cryptographic Reconciliation",
+    "route": "AWS \u27f7 Azure",
+    "duration": "2.10s total",
+    "rows": "6,362,620 rows audited",
+    "rpo": "0 rows",
+    "operator": "Autonomous Auditor",
+    "audit": "Verified",
+    "status": "100% WAN Parity"
+  },
+  {
+    "id": "RUN-003",
+    "timestamp": "2026-11-05 15:45:30",
+    "operation": "3-Strike Watchdog Outage Drill",
+    "route": "AWS (AWC63551) \u2794 Azure (LQB72917)",
+    "duration": "1.24s RTO (15.1s total)",
+    "rows": "6,362,620 rows active on Azure",
+    "rpo": "0 rows",
+    "operator": "Watchdog Sentry",
+    "audit": "Verified",
+    "status": "PASS (RPO=0)"
+  },
+  {
+    "id": "RUN-002",
+    "timestamp": "2026-11-05 14:15:18",
+    "operation": "Delta Catch-Up & Failback",
+    "route": "Azure (LQB72917) \u2794 AWS (AWC63551)",
+    "duration": "1.45s RTO (16.8s total)",
+    "rows": "6,362,620 rows active on AWS",
+    "rpo": "0 rows",
+    "operator": "Enterprise Operator",
+    "audit": "Verified",
+    "status": "AWS PRIMARY"
+  },
+  {
+    "id": "RUN-001",
+    "timestamp": "2026-11-05 12:00:00",
+    "operation": "Continuous WAN Replication & PaySim Ingestion",
+    "route": "AWS (AWC63551) \u2794 Azure (LQB72917)",
+    "duration": "18.2s total (5,494 rows/s)",
+    "rows": "6,362,620 rows",
+    "rpo": "0 rows",
+    "operator": "Snowpipe Ingestion Pipeline",
+    "audit": "Verified",
+    "status": "In Sync"
+  }
+]

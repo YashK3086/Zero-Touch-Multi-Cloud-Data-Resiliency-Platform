@@ -168,3 +168,4 @@ def provision_onboarding_pipeline(req: ProvisionOnboardingRequest) -> dict[str, 
     except Exception as e:
         logger.exception("Onboarding provisioning failed")
         raise HTTPException(status_code=500, detail=str(e)) from e
+

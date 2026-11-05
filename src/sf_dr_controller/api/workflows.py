@@ -206,28 +206,36 @@ def _execute_real_workflow(
             yield _sse("step_done", {"step_index": 3, "duration_s": round(time.perf_counter() - s3, 2)})
 
             total_s = round(time.perf_counter() - t_workflow_start, 2)
-            with state._lock:
-                state.drill_history.insert(
-                    0,
-                    {
-                        "id": run_id,
-                        "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
-                        "operation": "Live PaySim Ingestion & Sync",
-                        "route": f"{active_snap['label']} ➔ {standby_snap['label']}",
-                        "duration": f"{total_s:.2f}s",
-                        "rows": f"+{batch_rows:,} rows (total: {new_total:,})",
-                        "rpo": "0 rows",
-                        "operator": operator,
-                        "audit": "Verified",
-                        "status": "PASS",
-                    },
-                )
+            summary_msg = f"Ingested {batch_rows:,} transactions on {active_snap['label']} and synchronized to {standby_snap['label']} in {total_s}s with RPO=0."
+            drill_item = {
+                "id": run_id,
+                "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
+                "operation": "Live PaySim Ingestion & Sync",
+                "route": f"{active_snap['label']} ➔ {standby_snap['label']}",
+                "duration": f"{total_s:.2f}s",
+                "rows": f"+{batch_rows:,} rows (total: {new_total:,})",
+                "rpo": "0 rows",
+                "operator": operator,
+                "audit": "Verified",
+                "status": "PASS",
+            }
+            state.record_drill(drill_item)
+            state.record_workflow_completion({
+                "runId": run_id,
+                "workflow": "Live PaySim Ingestion & Sync",
+                "title": f"Live PaySim Ingestion & Sync ({active_snap['label']} ➔ {standby_snap['label']})",
+                "state": "success",
+                "elapsedS": total_s,
+                "activeStepIdx": -1,
+                "summary": summary_msg,
+                "error": None,
+            })
             yield _sse(
                 "workflow_done",
                 {
                     "run_id": run_id,
                     "total_s": total_s,
-                    "summary": f"Ingested {batch_rows:,} transactions on {active_snap['label']} and synchronized to {standby_snap['label']} in {total_s}s with RPO=0.",
+                    "summary": summary_msg,
                 },
             )
 
@@ -297,6 +305,14 @@ def _execute_real_workflow(
                 s1 = time.perf_counter()
                 yield _sse("step_start", {"step_index": 1})
                 if not already_primary:
+                    sec_st = str(az_fg.get("secondary_state", "")).upper()
+                    if sec_st == "SUSPENDED":
+                        yield emit_log(1, settings.secondary.identifier, "Failover group in SUSPENDED state on Azure; resuming replication schedule...", level="INFO")
+                        try:
+                            _exec_dict(cur, f"ALTER FAILOVER GROUP {fg_name} RESUME")
+                        except Exception as resume_err:
+                            logger.info("Resume failover group: %s", resume_err)
+
                     ref_stmt = sql.refresh_failover_group(fg_name)
                     yield emit_log(1, settings.secondary.identifier, "Initiating final micro-partition delta sync...", sql_text=ref_stmt)
                     try:
@@ -400,29 +416,42 @@ def _execute_real_workflow(
             aws_locator = state.aws.get("locator", "AWC63551")
             status_text = "Azure PRIMARY" if az_is_primary else "AWS PRIMARY"
 
-            with state._lock:
-                state.last_rto_seconds = measured_rto
-                state.drill_history.insert(
-                    0,
-                    {
-                        "id": run_id,
-                        "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
-                        "operation": "Chaos Failover Drill" if is_chaos else "Manual Emergency Failover",
-                        "route": f"AWS ({aws_locator}) ➔ Azure ({az_locator})",
-                        "duration": f"{measured_rto:.2f}s RTO ({total_s:.2f}s total)",
-                        "rows": f"{state.azure.get('row_count') or 0:,} rows active on Azure",
-                        "rpo": "0 rows",
-                        "operator": operator,
-                        "audit": "Verified",
-                        "status": status_text,
-                    },
-                )
-
             summary_msg = (
                 f"Azure ({az_locator}) is now real PRIMARY (Read-Write) and AWS ({aws_locator}) is Read-Only Replica! Measured Switchover RTO: {measured_rto}s."
                 if az_is_primary
                 else f"Promotion workflow finished in {total_s}s. Live telemetry confirms authority transition."
             )
+
+            with state._lock:
+                state.last_rto_seconds = measured_rto
+                state.manual_override = True
+                state.auto_failover_triggered = False
+                state.auto_failback_enabled = False
+
+            drill_item = {
+                "id": run_id,
+                "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
+                "operation": "Chaos Failover Drill" if is_chaos else "Manual Emergency Failover",
+                "route": f"AWS ({aws_locator}) ➔ Azure ({az_locator})",
+                "duration": f"{measured_rto:.2f}s RTO ({total_s:.2f}s total)",
+                "rows": f"{state.azure.get('row_count') or 0:,} rows active on Azure",
+                "rpo": "0 rows",
+                "operator": operator,
+                "audit": "Verified",
+                "status": status_text,
+            }
+            state.record_drill(drill_item)
+            state.record_workflow_completion({
+                "runId": run_id,
+                "workflow": drill_item["operation"],
+                "title": f"{drill_item['operation']} ({drill_item['route']})",
+                "state": "success",
+                "elapsedS": total_s,
+                "activeStepIdx": -1,
+                "summary": summary_msg,
+                "error": None,
+            })
+
             yield _sse(
                 "workflow_done",
                 {
@@ -587,32 +616,43 @@ def _execute_real_workflow(
             aws_locator = state.aws.get("locator", "AWC63551")
             status_text = "AWS PRIMARY" if aws_is_primary else "Azure PRIMARY"
 
-            with state._lock:
-                state.simulate_aws_outage = False
-                state.consecutive_failures = 0
-                state.auto_failover_triggered = False
-                state.last_rto_seconds = measured_switch
-                state.drill_history.insert(
-                    0,
-                    {
-                        "id": run_id,
-                        "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
-                        "operation": "Reverse Delta Sync & Failback",
-                        "route": f"Azure ({az_locator}) ➔ AWS ({aws_locator})",
-                        "duration": f"{total_s:.2f}s ({measured_switch:.2f}s switch)",
-                        "rows": f"{state.aws.get('row_count') or 0:,} rows synced on AWS",
-                        "rpo": "0 rows",
-                        "operator": operator,
-                        "audit": "Verified",
-                        "status": status_text,
-                    },
-                )
-
             summary_msg = (
                 f"AWS ({aws_locator}) restored as authoritative PRIMARY and Azure ({az_locator}) returned to Read-Only Standby Replica in {total_s}s."
                 if aws_is_primary
                 else f"Failback workflow finished in {total_s}s. Live telemetry confirms authority transition."
             )
+
+            with state._lock:
+                state.simulate_aws_outage = False
+                state.consecutive_failures = 0
+                state.auto_failover_triggered = False
+                state.manual_override = False
+                state.last_rto_seconds = measured_switch
+
+            drill_item = {
+                "id": run_id,
+                "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
+                "operation": "Reverse Delta Sync & Failback",
+                "route": f"Azure ({az_locator}) ➔ AWS ({aws_locator})",
+                "duration": f"{total_s:.2f}s ({measured_switch:.2f}s switch)",
+                "rows": f"{state.aws.get('row_count') or 0:,} rows synced on AWS",
+                "rpo": "0 rows",
+                "operator": operator,
+                "audit": "Verified",
+                "status": status_text,
+            }
+            state.record_drill(drill_item)
+            state.record_workflow_completion({
+                "runId": run_id,
+                "workflow": "Reverse Delta Sync & Failback",
+                "title": f"Reverse Delta Sync & Failback (Azure ({az_locator}) ➔ AWS ({aws_locator}))",
+                "state": "success",
+                "elapsedS": total_s,
+                "activeStepIdx": -1,
+                "summary": summary_msg,
+                "error": None,
+            })
+
             yield _sse(
                 "workflow_done",
                 {
@@ -754,36 +794,46 @@ def _execute_real_workflow(
             with state._lock:
                 state.last_reconcile = reconcile_record
                 state.last_refresh_history = hist_records
-                state.drill_history.insert(
-                    0,
-                    {
-                        "id": run_id,
-                        "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
-                        "operation": "Cryptographic Hash Audit",
-                        "route": "AWS ⇄ Azure Parity",
-                        "duration": f"{round(time.perf_counter() - t_workflow_start, 2)}s",
-                        "rows": f"{aws_cnt:,} rows reconciled",
-                        "rpo": f"{diff_rows} rows",
-                        "operator": operator,
-                        "audit": "Certified",
-                        "status": "PARITY MATCH" if hashes_match else "DELTA",
-                    },
-                )
+
+            total_s = round(time.perf_counter() - t_workflow_start, 2)
+            summary_msg = (
+                f"Reconciliation completed in {total_s}s: {aws_cnt:,} rows verified across clouds with matching HASH_AGG ({aws_hsh}). RPO = 0."
+                if hashes_match
+                else f"Reconciliation completed in {total_s}s: Found {diff_rows} pending rows between AWS and Azure."
+            )
+            drill_item = {
+                "id": run_id,
+                "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
+                "operation": "Cryptographic Hash Audit",
+                "route": "AWS ⇄ Azure Parity",
+                "duration": f"{total_s:.2f}s",
+                "rows": f"{aws_cnt:,} rows reconciled",
+                "rpo": f"{diff_rows} rows",
+                "operator": operator,
+                "audit": "Certified",
+                "status": "PARITY MATCH" if hashes_match else "DELTA",
+            }
+            state.record_drill(drill_item)
+            state.record_workflow_completion({
+                "runId": run_id,
+                "workflow": "Cryptographic Hash Audit",
+                "title": "Cryptographic Hash Audit (AWS ⇄ Azure Parity)",
+                "state": "success",
+                "elapsedS": total_s,
+                "activeStepIdx": -1,
+                "summary": summary_msg,
+                "error": None,
+            })
             yield emit_log(3, "AUDITOR", verdict, level="SUCCESS" if hashes_match else "WARN")
             yield _sse("step_done", {"step_index": 3, "duration_s": round(time.perf_counter() - s3, 2)})
 
-            total_s = round(time.perf_counter() - t_workflow_start, 2)
             yield _sse(
                 "workflow_done",
                 {
                     "run_id": run_id,
                     "total_s": total_s,
                     "reconcile": reconcile_record,
-                    "summary": (
-                        f"Reconciliation completed in {total_s}s: {aws_cnt:,} rows verified across clouds with matching HASH_AGG ({aws_hsh}). RPO = 0."
-                        if hashes_match
-                        else f"Reconciliation completed in {total_s}s: Found {diff_rows} pending rows between AWS and Azure."
-                    ),
+                    "summary": summary_msg,
                 },
             )
 

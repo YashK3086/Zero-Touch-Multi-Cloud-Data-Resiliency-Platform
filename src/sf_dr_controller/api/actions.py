@@ -105,3 +105,4 @@ def configure_watchdog_and_outage(req: WatchdogConfigRequest) -> dict[str, Any]:
                 )
     state.trigger_immediate_probe()
     return get_system_status()
+

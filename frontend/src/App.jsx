@@ -126,13 +126,14 @@ export default function App() {
   const fetchTelemetry = useCallback(async () => {
     try {
       setLoading(true);
-      const [resStatus, resKpis, resDiag, resLedger, resDrills, resLogs] = await Promise.all([
+      const [resStatus, resKpis, resDiag, resLedger, resDrills, resLogs, resLastRun] = await Promise.all([
         fetch('/api/status').then((r) => (r.ok ? r.json() : null)),
         fetch('/api/kpi').then((r) => (r.ok ? r.json() : null)),
         fetch('/api/diagnostics').then((r) => (r.ok ? r.json() : null)),
         fetch('/api/ledger').then((r) => (r.ok ? r.json() : null)),
         fetch('/api/drills').then((r) => (r.ok ? r.json() : null)),
         fetch('/api/live-logs').then((r) => (r.ok ? r.json() : null)),
+        fetch('/api/workflows/last-run').then((r) => (r.ok ? r.json() : null)),
       ]);
 
       if (!resStatus) {
@@ -147,6 +148,21 @@ export default function App() {
       if (resLedger) setLedger(resLedger);
       if (resDrills) setDrillHistory(resDrills);
       if (resLogs) setLiveLogs(resLogs);
+
+      if (resLastRun && resLastRun.summary) {
+        setWorkflowRun((prev) => {
+          if (prev.state === 'running') return prev;
+          if (prev.state === 'idle' || !prev.runId) {
+            try {
+              localStorage.setItem('sf_dr_last_run', JSON.stringify(resLastRun));
+            } catch {
+              // ignore
+            }
+            return resLastRun;
+          }
+          return prev;
+        });
+      }
     } catch {
       setApiOnline(false);
     } finally {

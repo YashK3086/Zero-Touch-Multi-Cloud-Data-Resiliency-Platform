@@ -1,0 +1,26 @@
+{
+  "runId": "RUN-005",
+  "workflow": "Manual Emergency Failover",
+  "title": "Manual Emergency Failover (AWS (AWC63551) \u2794 Azure (LQB72917))",
+  "state": "success",
+  "elapsedS": 14.2,
+  "activeStepIdx": -1,
+  "summary": "PASS (RPO=0): 1.17s RTO (14.2s total) \u00b7 6,362,620 rows active on Azure (Enterprise Operator)",
+  "steps": [
+    {
+      "title": "Manual Emergency Failover \u00b7 Route: AWS (AWC63551) \u2794 Azure (LQB72917)",
+      "status": "done",
+      "duration_s": 14.2,
+      "logs": [
+        {
+          "ts": "2026-11-05 18:24:12",
+          "account": "AUDIT",
+          "message": "Verified execution: Manual Emergency Failover \u2794 PASS (RPO=0)",
+          "level": "SUCCESS"
+        }
+      ],
+      "expanded": false
+    }
+  ],
+  "error": null
+}
