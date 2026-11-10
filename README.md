@@ -7,10 +7,12 @@
 [![AWS](https://img.shields.io/badge/AWS-us--east--1-232F3E?logo=amazon-aws&logoColor=white)](https://aws.amazon.com)
 [![Azure](https://img.shields.io/badge/Azure-East%20US%202-0089D6?logo=microsoft-azure&logoColor=white)](https://azure.microsoft.com)
 [![Terraform](https://img.shields.io/badge/Terraform-1.5+-7B42BC?logo=terraform&logoColor=white)](https://terraform.io)
-[![Vercel](https://img.shields.io/badge/Vercel-Frontend-000000?logo=vercel&logoColor=white)](https://vercel.com)
+[![Vercel](https://img.shields.io/badge/Vercel-Live%20Dashboard-000000?logo=vercel&logoColor=white)](https://auto-failover.vercel.app/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 An enterprise-grade, **zero-touch multi-cloud Disaster Recovery (DR) and continuous resiliency control plane**. Built to orchestrate cross-cloud database replication and full-stack application failover between **AWS (Primary)** and **Azure (Secondary Hot-Standby)** with **$0.00 idle compute cost**, automated Anycast DNS routing, and sub-second data switchover ($RPO = 0$).
+
+🔗 **Live Production Dashboard**: [https://auto-failover.vercel.app/](https://auto-failover.vercel.app/)
 
 ---
 

@@ -54,3 +54,7 @@ reports/*.pdf
 .DS_Store
 Thumbs.db
 *.log
+
+# Assistant & Session Memory / Error Logs
+memory.md
+ERROR.md
