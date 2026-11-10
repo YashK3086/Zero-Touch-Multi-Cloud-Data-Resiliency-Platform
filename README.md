@@ -40,49 +40,49 @@ This platform implements a **true Pilot-Light architecture**:
 ```mermaid
 flowchart TD
     subgraph CP[" SaaS Control Plane & 4-Part Deciding Engine (FastAPI + React 19) "]
-        WC["1. WorkloadCataloger<br/>(AWS EC2, VPC, S3, Spec Discovery)"]
-        CCT["2. CrossCloudTranslator<br/>(AWS ➔ Azure ACI / ARM / VNet)"]
-        WH["3. WorkloadHydrator<br/>(0 ➔ 1 Scale, EC2 Pause/Resume)"]
-        WS["4. Watchdog Sentry<br/>(3-Strike Sentinel & Probes)"]
+        WC["1. WorkloadCataloger<br/>AWS EC2, VPC, S3, Spec Discovery"]
+        CCT["2. CrossCloudTranslator<br/>AWS to Azure ACI / ARM / VNet"]
+        WH["3. WorkloadHydrator<br/>0 to 1 Scale, EC2 Pause/Resume"]
+        WS["4. Watchdog Sentry<br/>3-Strike Sentinel & Probes"]
     end
 
     subgraph ANYCAST[" Global Anycast Routing Layer "]
-        URL["Global Client Redirect Endpoint<br/><code>nnfcdxy-sf_dr_global_redirect.snowflakecomputing.com</code>"]
+        URL["Global Client Redirect Endpoint<br/>nnfcdxy-sf_dr_global_redirect.snowflakecomputing.com"]
     end
 
     subgraph AWS_TIER[" Primary Cloud: AWS (us-east-1) "]
-        EC2["Customer App: EC2 t3.micro<br/><code>paysecure-api:8080</code><br/>Status: ACTIVE (Paused during Failover)"]
-        S3["AWS S3 Throw Bucket<br/>(PaySim Staging)"]
-        SF_PRI["Snowflake Primary Account (AWS)<br/>Database: <code>SF_DR_DEMO_DB</code> (READ-WRITE)<br/>Table: <code>FINANCIAL_TRANSACTIONS</code> (6.36M rows)<br/>Failover Group: <code>SF_DR_FAILOVER_GROUP</code> (PRIMARY)"]
+        EC2["Customer App: EC2 t3.micro<br/>paysecure-api:8080<br/>Status: ACTIVE (Paused during Failover)"]
+        S3["AWS S3 Throw Bucket<br/>PaySim Staging"]
+        SF_PRI["Snowflake Primary Account (AWS)<br/>Database: SF_DR_DEMO_DB (READ-WRITE)<br/>Table: FINANCIAL_TRANSACTIONS (6.36M rows)<br/>Failover Group: SF_DR_FAILOVER_GROUP (PRIMARY)"]
     end
 
     subgraph AZURE_TIER[" Standby Cloud: Azure (East US 2) "]
-        ACI["Container Instance (ACI)<br/><code>sf-dr-paysecure-api-dr</code><br/>Idle: 0 Replicas ($0.00/hr)<br/>Hydrated: 1 Replica (&lt;15s)"]
-        BLOB["Azure Blob Storage<br/>(Catch Container)"]
-        SF_SEC["Snowflake Standby Account (Azure)<br/>Database: <code>SF_DR_DEMO_DB</code> (READ-ONLY)<br/>Failover Group: <code>SF_DR_FAILOVER_GROUP</code> (SECONDARY REPLICA)"]
+        ACI["Container Instance (ACI)<br/>sf-dr-paysecure-api-dr<br/>Idle: 0 Replicas ($0.00/hr)<br/>Hydrated: 1 Replica (&lt;15s)"]
+        BLOB["Azure Blob Storage<br/>Catch Container"]
+        SF_SEC["Snowflake Standby Account (Azure)<br/>Database: SF_DR_DEMO_DB (READ-ONLY)<br/>Failover Group: SF_DR_FAILOVER_GROUP (SECONDARY REPLICA)"]
     end
 
     %% Client Traffic
-    URL -. Normal Ops .-> SF_PRI
-    URL -. Failover Redirect .-> SF_SEC
+    URL -. "Normal Ops" .-> SF_PRI
+    URL -. "Failover Redirect" .-> SF_SEC
 
     %% Discovery and Translation
-    WC -->|Discovers Spec| EC2
+    WC -->|"Discovers Spec"| EC2
     WC --> CCT
-    CCT -->|Generates ARM Spec| WH
+    CCT -->|"Generates ARM Spec"| WH
 
     %% Hydration Actions
-    WH -->|Scales Up & Deploys| ACI
-    WH -->|Pauses EC2 / Anti-Split-Brain| EC2
-    WH -->|Promotes Failover Group| SF_SEC
+    WH -->|"Scales Up & Deploys"| ACI
+    WH -->|"Pauses EC2 Anti-Split-Brain"| EC2
+    WH -->|"Promotes Failover Group"| SF_SEC
 
     %% Data Ingestion & Cross-Cloud Replication
-    S3 -->|Snowpipe / COPY| SF_PRI
-    SF_PRI ===|Continuous WAN Replication| SF_SEC
+    S3 -->|"Snowpipe / COPY"| SF_PRI
+    SF_PRI ===|"Continuous WAN Replication"| SF_SEC
 
     %% Health Checks
-    WS -.->|Probes (every 10s)| EC2
-    WS -.->|Probes (every 10s)| SF_PRI
+    WS -.->|"Health Probes (every 10s)"| EC2
+    WS -.->|"Health Probes (every 10s)"| SF_PRI
 ```
 
 ---
