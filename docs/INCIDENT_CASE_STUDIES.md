@@ -21,8 +21,8 @@ This document details how the **Zero-Touch Multi-Cloud Disaster Recovery Platfor
    - Primary: AWS us-east-1 (Amazon Linux / Xen / Nitro hypervisors).
    - Secondary: Azure East US 2 (Azure Linux / Hyper-V infrastructure).
    - A kernel update crash affecting one hypervisor or vendor OS does not propagate across the cloud boundary.
-3. **Decoupled Autonomous Controller**:
-   - The SRE watchdog daemon runs as an isolated, containerized, non-root microservice (`docker/Dockerfile.daemon`). If the primary endpoint fails to respond to 3 consecutive heartbeat queries, the controller promotes the secondary group on Azure within 5 seconds.
+3. **Decoupled Autonomous SaaS Control Plane**:
+   - The SRE watchdog and deciding engine run inside an isolated, cloud-native container (`Dockerfile` deployed on Render + Vercel UI). If the primary endpoint fails to respond to 3 consecutive heartbeat queries, the controller promotes the secondary Failover Group and hydrates standby container replicas (`0 -> 1`) within seconds.
 
 ---
 

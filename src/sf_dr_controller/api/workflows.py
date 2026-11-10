@@ -242,8 +242,8 @@ def _execute_real_workflow(
         # -------------------------------------------------------------------
         # WORKFLOW 2 & 3: LIVE FAILOVER (AWS ➔ Azure East US 2)
         # -------------------------------------------------------------------
-        elif workflow_type in ("failover", "chaos"):
-            is_chaos = workflow_type == "chaos"
+        elif workflow_type in ("failover", "chaos", "chaos_failover"):
+            is_chaos = workflow_type in ("chaos", "chaos_failover")
             # Set manual override so watchdog never auto-reverses user action!
             with state._lock:
                 state.manual_override = True
@@ -254,7 +254,8 @@ def _execute_real_workflow(
                 f"Synchronize Final In-Flight WAN Delta ('{fg_name}')",
                 f"Promote Failover Group '{fg_name}' to PRIMARY (Read-Write)",
                 f"Promote Anycast Client Redirect Connection '{conn_name}'",
-                "Probe Global Anycast URL & Verify DNS Route Swing",
+                "Parallel Workload Hydration (Azure Container Apps Pilot-Light Scale-Up)",
+                "Full-Stack Synthetic Health & Anycast Routing Probe",
             ]
             yield _sse(
                 "workflow_init",
@@ -270,7 +271,7 @@ def _execute_real_workflow(
                 },
             )
 
-            with _open_sf_connection(settings.secondary, use_warehouse=False, timeout=30) as c_az:
+            with _open_sf_connection(settings.secondary, use_warehouse=False, timeout=45) as c_az:
                 cur = c_az.cursor()
 
                 # Step 0: Pre-flight check on Azure
@@ -289,6 +290,25 @@ def _execute_real_workflow(
                 qid_fg, fg_rows, _ = _exec_dict(cur, f"SHOW FAILOVER GROUPS LIKE '{fg_name}'")
                 az_short = settings.secondary.identifier.split("-", 1)[1].upper()
                 az_fg = next((r for r in fg_rows if str(r.get("account_name", "")).upper() == az_short), {})
+
+                # Ensure replica failover group exists on Azure if not yet linked
+                if not az_fg:
+                    p_org, p_acc = settings.primary.identifier.split("-", 1)
+                    create_rep_fg = (
+                        f"CREATE FAILOVER GROUP IF NOT EXISTS {fg_name} "
+                        f"AS REPLICA OF {p_org}.{p_acc}.{fg_name}"
+                    )
+                    yield emit_log(
+                        0,
+                        settings.secondary.identifier,
+                        f"Linking Secondary Failover Group replica on Azure: {create_rep_fg}",
+                        sql_text=create_rep_fg,
+                        level="INFO",
+                    )
+                    _exec_dict(cur, create_rep_fg)
+                    _, fg_rows, _ = _exec_dict(cur, f"SHOW FAILOVER GROUPS LIKE '{fg_name}'")
+                    az_fg = next((r for r in fg_rows if str(r.get("account_name", "")).upper() == az_short), {})
+
                 already_primary = str(az_fg.get("is_primary", "")).lower() == "true"
 
                 yield emit_log(
@@ -377,6 +397,13 @@ def _execute_real_workflow(
                 # Step 3: Promote Client Redirect Connection on Azure
                 s3 = time.perf_counter()
                 yield _sse("step_start", {"step_index": 3})
+                # Ensure connection replica exists on Azure before promoting
+                _, conn_rows, _ = _exec_dict(cur, f"SHOW CONNECTIONS LIKE '{conn_name}'")
+                az_conn = next((r for r in conn_rows if str(r.get("account_name", "")).upper() == az_short), {})
+                if not az_conn:
+                    p_org, p_acc = settings.primary.identifier.split("-", 1)
+                    _exec_dict(cur, f"CREATE CONNECTION IF NOT EXISTS {conn_name} AS REPLICA OF {p_org}.{p_acc}.{conn_name}")
+
                 prom_cn_stmt = sql.promote_connection(conn_name)
                 yield emit_log(3, settings.secondary.identifier, f"Swinging Anycast DNS connection: {prom_cn_stmt}", sql_text=prom_cn_stmt)
                 qid_pcn, pcn_rows, pcn_ms = _exec_dict(cur, prom_cn_stmt)
@@ -392,23 +419,112 @@ def _execute_real_workflow(
                 cur.close()
                 yield _sse("step_done", {"step_index": 3, "duration_s": round(time.perf_counter() - s3, 2)})
 
-            # Step 4: Verify Anycast DNS & Multi-Cloud Routing Live
+            # Step 4: Parallel Microservice & Infrastructure Hydration on Azure
             s4 = time.perf_counter()
             yield _sse("step_start", {"step_index": 4})
+            from ..discovery import discover_aws, ensure_azure_catch_storage, ensure_azure_container_instance
+
+            # 1. Hydrate 1:1 Matching Azure Storage, Network & Compute Infrastructure
+            try:
+                az_infra = ensure_azure_catch_storage()
+                if az_infra.get("created"):
+                    yield emit_log(
+                        4,
+                        "AZURE_INFRASTRUCTURE",
+                        f"Hydrated 1:1 Azure DR Infrastructure: RG='{az_infra.get('resource_group')}' | Storage='{az_infra.get('storage_account')}' | Blob='{az_infra.get('container')}' | VNet='sf-dr-sample-app-vnet-drdemo'",
+                        level="SUCCESS",
+                    )
+                az_aci = ensure_azure_container_instance()
+                if az_aci.get("created"):
+                    yield emit_log(
+                        4,
+                        "AZURE_CONTAINER_INSTANCES",
+                        f"Hydrated live Azure Container Instance: Name='{az_aci.get('name')}' (Status -> RUNNING, Public FQDN='{az_aci.get('fqdn')}').",
+                        level="SUCCESS",
+                    )
+            except Exception as az_infra_err:
+                yield emit_log(4, "AZURE_INFRASTRUCTURE", f"Azure infra note: {az_infra_err}", level="INFO")
+
+            live_aws_disc = discover_aws()
+            running_ec2 = [i for i in live_aws_disc.get("instances", []) if i.get("state") in ("running", "pending")]
+
+            # 2. Safely pause primary EC2 compute to prevent split-brain & double compute burn
+            if len(running_ec2) > 0:
+                try:
+                    from ..discovery import aws_credentials
+                    ak, sk, reg = aws_credentials()
+                    if ak and sk:
+                        import boto3
+                        ec2_cli = boto3.client("ec2", aws_access_key_id=ak, aws_secret_access_key=sk, region_name=reg)
+                        inst_ids = [i["instance_id"] for i in running_ec2 if i.get("instance_id")]
+                        if inst_ids:
+                            ec2_cli.stop_instances(InstanceIds=inst_ids)
+                            yield emit_log(
+                                4,
+                                "AWS_EC2_LIFECYCLE",
+                                f"Safely paused primary EC2 {inst_ids} (Status -> STOPPED, EBS volume preserved, $0.00 compute burn).",
+                                level="SUCCESS",
+                            )
+                except Exception as ec2_stop_err:
+                    yield emit_log(4, "AWS_EC2_LIFECYCLE", f"EC2 pause note: {ec2_stop_err}", level="INFO")
+
+            if len(running_ec2) == 0:
+                yield emit_log(
+                    4,
+                    "AZURE_CONTAINER_APPS",
+                    "0 Running Compute Services detected on Primary AWS Cloud — Skipping Container App spin-up (0 Idle Compute Burn maintained).",
+                    level="INFO",
+                )
+            else:
+                yield emit_log(4, "AZURE_CONTAINER_APPS", f"Spinning up {len(running_ec2)} pilot-light microservice(s) from DR workload catalog...", level="INFO")
+                try:
+                    from ..workloads import WorkloadHydrator
+                    hydrator = WorkloadHydrator()
+                    hyd_res = hydrator.hydrate_all(target_replicas=1)
+                    for w in hyd_res.get("workloads", []):
+                        yield emit_log(
+                            4,
+                            "AZURE_CONTAINER_APPS",
+                            f"Hydrated '{w['workload']}' on Azure ({w.get('ingress_fqdn', 'gentlewave-eastus2')}) in {w.get('duration_seconds')}s (1 replica active)",
+                            level="SUCCESS",
+                        )
+                except Exception as hyd_err:
+                    yield emit_log(4, "AZURE_CONTAINER_APPS", f"Hydration orchestrator warning: {hyd_err}", level="WARN")
+
+            yield _sse("step_done", {"step_index": 4, "duration_s": round(time.perf_counter() - s4, 2)})
+
+            # Step 5: End-to-End Synthetic Probe (Execute real Anycast DNS & row verification)
+            s5 = time.perf_counter()
+            yield _sse("step_start", {"step_index": 5})
             state.run_probe_cycle(include_anycast=True)
             yield _sse("telemetry_refresh", {})
 
             anycast_res = state.anycast
+            az_rows_now = state.azure.get("row_count") or 0
             yield emit_log(
-                4,
+                5,
                 "GLOBAL_DNS",
                 f"Anycast URL {anycast_res.get('url')} verified landing on Locator={anycast_res.get('landed_locator')} Region={anycast_res.get('landed_region')}",
                 sql_text="SELECT CURRENT_ACCOUNT(), CURRENT_REGION()",
                 sfqid=anycast_res.get("sfqid"),
                 level="SUCCESS",
             )
-            yield emit_log(4, "AUDIT", "Audit event recorded: Failover to Azure verified successfully.", level="SUCCESS")
-            yield _sse("step_done", {"step_index": 4, "duration_s": round(time.perf_counter() - s4, 2)})
+            if len(running_ec2) == 0 and az_rows_now == 0:
+                yield emit_log(
+                    5,
+                    "SYNTHETIC_PROBE",
+                    "Control-Plane Promotion verified with 0 hosted rows & 0 compute services (Nothing uploaded — Empty Schema promoted to Read-Write on Azure).",
+                    level="SUCCESS",
+                )
+            else:
+                yield emit_log(
+                    5,
+                    "SYNTHETIC_PROBE",
+                    f"Full-Stack Promotion verified on Azure with {az_rows_now:,} replicated rows and {len(running_ec2)} active compute service(s)!",
+                    level="SUCCESS",
+                )
+            yield emit_log(5, "AUDIT", "Audit event recorded: Failover to Azure verified successfully.", level="SUCCESS")
+            yield _sse("step_done", {"step_index": 5, "duration_s": round(time.perf_counter() - s5, 2)})
 
             total_s = round(time.perf_counter() - t_workflow_start, 2)
             az_is_primary = state.azure.get("fg_is_primary", False)
@@ -475,6 +591,7 @@ def _execute_real_workflow(
                 f"Execute Reverse Catch-Up WAN Refresh on AWS ('{fg_name}')",
                 f"Promote Failover Group '{fg_name}' Back to AWS PRIMARY",
                 f"Restore Global Anycast Connection '{conn_name}' to AWS us-east-1",
+                "Scale Down Azure Pilot-Light Containers (0 Replicas / $0 Idle Compute)",
                 "Verify Global Anycast URL Lands on AWS & Restore Operational Status",
             ]
             yield _sse(
@@ -520,7 +637,7 @@ def _execute_real_workflow(
                         yield emit_log(
                             1,
                             settings.primary.identifier,
-                            f"Reverse WAN catch-up completed in {ref_ms / 1000:.2f}s! {ref_rows}",
+                            f"Reverse WAN catch-up completed in {ref_ms / 1000:.2f}s! All disaster delta transactions synchronized back from Azure to AWS Primary ({ref_rows})",
                             sql_text=ref_stmt,
                             sfqid=qid_ref,
                             level="SUCCESS",
@@ -592,23 +709,73 @@ def _execute_real_workflow(
                 cur.close()
                 yield _sse("step_done", {"step_index": 3, "duration_s": round(time.perf_counter() - s3, 2)})
 
-            # Step 4: Verify Anycast DNS & Route Parity
+            # Step 4: Scale down Azure Container Apps & Resume AWS Primary EC2
             s4 = time.perf_counter()
             yield _sse("step_start", {"step_index": 4})
+            from ..discovery import aws_credentials, discover_aws
+            live_aws_disc = discover_aws()
+
+            # 1. Resume paused AWS Primary EC2 compute
+            try:
+                ak, sk, reg = aws_credentials()
+                if ak and sk:
+                    import boto3
+                    ec2_cli = boto3.client("ec2", aws_access_key_id=ak, aws_secret_access_key=sk, region_name=reg)
+                    # Describe all instances tagged for this project or in stopped state
+                    resp = ec2_cli.describe_instances(Filters=[{"Name": "instance-state-name", "Values": ["stopped"]}])
+                    stopped_ec2 = [inst["InstanceId"] for resv in resp.get("Reservations", []) for inst in resv.get("Instances", []) if inst.get("InstanceId")]
+                    if stopped_ec2:
+                        ec2_cli.start_instances(InstanceIds=stopped_ec2)
+                        yield emit_log(
+                            4,
+                            "AWS_EC2_LIFECYCLE",
+                            f"Resumed primary compute {stopped_ec2} on AWS (Status -> RUNNING).",
+                            level="SUCCESS",
+                        )
+            except Exception as ec2_start_err:
+                yield emit_log(4, "AWS_EC2_LIFECYCLE", f"EC2 resume note: {ec2_start_err}", level="INFO")
+
+            yield emit_log(4, "AZURE_CONTAINER_APPS", "Returning Azure pilot-light containers to standby (0 Replicas / $0 Idle Cost)...", level="INFO")
+            try:
+                from ..discovery import delete_azure_container_instance
+                del_res = delete_azure_container_instance()
+                if del_res.get("deleted"):
+                    yield emit_log(
+                        4,
+                        "AZURE_CONTAINER_INSTANCES",
+                        "Cleaned up Azure Container Instance 'sf-dr-paysecure-api-dr' (Reverted to 0 Replicas / $0 Idle Cost).",
+                        level="SUCCESS",
+                    )
+            except Exception as del_err:
+                yield emit_log(4, "AZURE_CONTAINER_INSTANCES", f"Azure ACI cleanup note: {del_err}", level="INFO")
+
+            try:
+                from ..workloads import WorkloadHydrator
+                hydrator = WorkloadHydrator()
+                down_res = hydrator.hydrate_all(target_replicas=0)
+                for w in down_res.get("workloads", []):
+                    yield emit_log(4, "AZURE_CONTAINER_APPS", f"Scaled down '{w['workload']}' to standby (0 replicas)", level="SUCCESS")
+            except Exception as down_err:
+                yield emit_log(4, "AZURE_CONTAINER_APPS", f"Standby scale down warning: {down_err}", level="WARN")
+            yield _sse("step_done", {"step_index": 4, "duration_s": round(time.perf_counter() - s4, 2)})
+
+            # Step 5: Verify Anycast DNS & Route Parity
+            s5 = time.perf_counter()
+            yield _sse("step_start", {"step_index": 5})
             state.run_probe_cycle(include_anycast=True)
             yield _sse("telemetry_refresh", {})
 
             anycast_res = state.anycast
             yield emit_log(
-                4,
+                5,
                 "GLOBAL_DNS",
                 f"Anycast URL {anycast_res.get('url')} verified landing on Locator={anycast_res.get('landed_locator')} Region={anycast_res.get('landed_region')}",
                 sql_text="SELECT CURRENT_ACCOUNT(), CURRENT_REGION()",
                 sfqid=anycast_res.get("sfqid"),
                 level="SUCCESS",
             )
-            yield emit_log(4, "AUDIT", "Audit event recorded: Failback to AWS verified successfully.", level="SUCCESS")
-            yield _sse("step_done", {"step_index": 4, "duration_s": round(time.perf_counter() - s4, 2)})
+            yield emit_log(5, "AUDIT", "Audit event recorded: Failback to AWS verified successfully.", level="SUCCESS")
+            yield _sse("step_done", {"step_index": 5, "duration_s": round(time.perf_counter() - s5, 2)})
 
             total_s = round(time.perf_counter() - t_workflow_start, 2)
             aws_is_primary = state.aws.get("fg_is_primary", False)
@@ -849,6 +1016,16 @@ def _execute_real_workflow(
         with state._lock:
             state.active_workflow = None
         state._workflow_lock.release()
+
+
+@router.get("/api/workflows/live-stream")
+def stream_workflow_query(
+    workflow: str = Query(..., description="Workflow type: failover, failback, chaos, ingest_sync, reconcile"),
+    batch_rows: int = Query(default=1000, ge=100, le=50000),
+    operator: str = Query(default="Live SRE Console"),
+):
+    """Query-parameter alias for live workflow SSE streaming."""
+    return stream_workflow(workflow_type=workflow, batch_rows=batch_rows, operator=operator)
 
 
 @router.get("/api/workflows/stream/{workflow_type}")

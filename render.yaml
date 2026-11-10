@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: sf-dr-control-plane
+    runtime: docker
+    plan: free
+    autoDeploy: true
+    healthCheckPath: /api/status
+    envVars:
+      - key: PORT
+        value: "8000"
+      - key: PYTHONUNBUFFERED
+        value: "1"
+

@@ -52,3 +52,45 @@ def show_connection(connection: str) -> str:
 def show_failover_group(group: str) -> str:
     """Query current primary account and allowed accounts for failover group."""
     return f"SHOW FAILOVER GROUPS LIKE '{validate_identifier(group)}'"
+
+
+# =========================================================================
+# Workload Cataloging & Blueprint Synchronization DDL (Phase 2)
+# =========================================================================
+
+def create_workload_catalog_table(database: str, schema: str = "DR_STAGING") -> str:
+    """DDL for storing container workload blueprints & replication metadata."""
+    db = validate_identifier(database)
+    sch = validate_identifier(schema)
+    return f"""
+    CREATE TABLE IF NOT EXISTS {db}.{sch}.DR_WORKLOAD_CATALOG (
+        workload_name VARCHAR(128) NOT NULL,
+        version VARCHAR(64) DEFAULT '1.0.0',
+        manifest_variant VARIANT NOT NULL,
+        active_cloud VARCHAR(32) DEFAULT 'AWS',
+        synced_at TIMESTAMP_LTZ DEFAULT CURRENT_TIMESTAMP(),
+        PRIMARY KEY (workload_name)
+    )
+    """
+
+
+def create_workload_pipe(database: str, stage_name: str, schema: str = "DR_STAGING") -> str:
+    """Defines Snowpipe auto-ingestion for workload blueprints placed in external stages."""
+    db = validate_identifier(database)
+    sch = validate_identifier(schema)
+    stg = validate_identifier(stage_name)
+    return f"""
+    CREATE OR REPLACE PIPE {db}.{sch}.SF_WORKLOAD_PIPE
+    AUTO_INGEST = TRUE
+    AS
+    COPY INTO {db}.{sch}.DR_WORKLOAD_CATALOG (workload_name, version, manifest_variant)
+    FROM (
+        SELECT
+            $1:name::VARCHAR,
+            $1:version::VARCHAR,
+            $1
+        FROM @{db}.{sch}.{stg}/workloads/
+    )
+    FILE_FORMAT = (TYPE = 'JSON')
+    """
+

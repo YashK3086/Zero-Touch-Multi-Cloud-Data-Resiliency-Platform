@@ -1,35 +1,29 @@
+/**
+ * Enterprise Multi-Cloud Disaster Recovery Control Plane (Mission Control)
+ *
+ * Core architecture:
+ * - Dynamic real-time telemetry from FastAPI backend (/api/*)
+ * - Server-Sent Events (SSE) live workflow runner with stopwatch
+ * - Real-time PaySim transaction ingestion and cross-cloud replication
+ * - Autonomous 3-strike watchdog sentry with failover/failback
+ */
+
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
-  Shield,
   Activity,
   AlertTriangle,
-  CheckCircle2,
-  Clock,
-  RefreshCw,
-  Copy,
-  Check,
-  Send,
-  Database,
   ArrowRightLeft,
-  Flame,
-  Zap,
   RotateCcw,
-  Scale,
-  ChevronDown,
-  ChevronRight,
-  Download,
-  Info,
-  Network,
-  Radio,
-  Search,
-  Terminal,
-  Play,
-  Square,
-  XCircle,
-  Circle,
-  Loader2,
+  Zap,
 } from 'lucide-react';
+
 import OnboardingModal from './components/OnboardingModal';
+import WorkloadHydrationMatrix from './components/WorkloadHydrationMatrix';
+import LiveTransactionStream from './components/LiveTransactionStream';
+import Sidebar from './components/Sidebar';
+import DashboardHeader from './components/DashboardHeader';
+import LiveExecutionConsole from './components/LiveExecutionConsole';
+import ObjectLedgerTable from './components/ObjectLedgerTable';
 
 export default function App() {
   const [apiOnline, setApiOnline] = useState(true);
@@ -42,431 +36,307 @@ export default function App() {
   const [readyToast, setReadyToast] = useState(null);
   const hasPromptedOnboarding = useRef(false);
 
-  // Live telemetry from /api/* (ZERO hardcoded fake fixtures)
+  // Live telemetry state from /api/* (Zero hardcoded fake fixtures)
   const [status, setStatus] = useState(null);
   const [kpis, setKpis] = useState([]);
   const [diagnostics, setDiagnostics] = useState(null);
   const [ledger, setLedger] = useState([]);
   const [drillHistory, setDrillHistory] = useState([]);
   const [liveLogs, setLiveLogs] = useState([]);
-  const [reconcileResult, setReconcileResult] = useState(null);
 
-  // GitHub-Actions-Style Live Workflow Runner State
+  // GitHub Actions-Style Live Workflow Runner State
   const [consoleTab, setConsoleTab] = useState('workflow'); // 'workflow' | 'probes'
-  const [batchSize, setBatchSize] = useState(1000);
-  const [autoStreamLoop, setAutoStreamLoop] = useState(false);
   const [workflowRun, setWorkflowRun] = useState({
     runId: null,
     workflow: null,
-    title: 'Ready — Trigger any Failover, Failback, Reconcile, or Live PaySim Batch below',
+    title: 'Ready — Trigger any Failover, Failback, or Live Reconcile in the console below',
     state: 'idle', // 'idle' | 'running' | 'success' | 'error'
     startedAtMs: null,
     elapsedS: 0,
     activeStepIdx: -1,
     stepStartedAtMs: null,
     stepElapsedS: 0,
-    steps: [], // [{ title, status: 'queued'|'running'|'done'|'error', duration_s: null, logs: [], expanded: false }]
-    summary: '',
-    error: null,
+    steps: [],
   });
 
-  const esRef = useRef(null);
   const consoleRef = useRef(null);
-  const workflowBusyRef = useRef(false);
 
-  // Restore last workflow run from localStorage so refreshing the page NEVER resets the console!
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem('sf_dr_last_run');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (parsed && (parsed.summary || parsed.steps?.length > 0)) {
-          setWorkflowRun(parsed);
-        }
-      }
-    } catch {
-      // ignore
-    }
-  }, []);
-
-  // Hydrate console from latest drill history if idle on initial page load
-  useEffect(() => {
-    if (drillHistory && drillHistory.length > 0 && workflowRun.state === 'idle') {
-      const latest = drillHistory[0];
-      setWorkflowRun((prev) => {
-        if (prev.state !== 'idle') return prev;
-        return {
-          ...prev,
-          runId: latest.id,
-          workflow: latest.operation,
-          title: `${latest.operation} (${latest.route})`,
-          state: 'success',
-          summary: `${latest.status}: ${latest.duration} · ${latest.rows} (${latest.operator})`,
-          steps: [
-            {
-              title: `${latest.operation} · Route: ${latest.route}`,
-              status: 'done',
-              duration_s: latest.duration,
-              logs: [
-                {
-                  ts: latest.timestamp,
-                  account: 'AUDIT',
-                  message: `Verified execution: ${latest.operation} ➔ ${latest.status}`,
-                  level: 'SUCCESS',
-                },
-              ],
-              expanded: false,
-            },
-          ],
-        };
-      });
-    }
-  }, [drillHistory, workflowRun.state]);
-
+  // ---------------------------------------------------------------------------
+  // Polling Hook: Fetch real telemetry from backend
+  // ---------------------------------------------------------------------------
   const fetchTelemetry = useCallback(async () => {
+    const safeJson = async (url, fallback = null) => {
+      const r = await fetch(url);
+      if (!r.ok) return fallback;
+      const ct = r.headers.get('content-type') || '';
+      if (!ct.includes('application/json')) return fallback;
+      return r.json();
+    };
     try {
-      setLoading(true);
       const [resStatus, resKpis, resDiag, resLedger, resDrills, resLogs, resLastRun] = await Promise.all([
-        fetch('/api/status').then((r) => (r.ok ? r.json() : null)),
-        fetch('/api/kpi').then((r) => (r.ok ? r.json() : null)),
-        fetch('/api/diagnostics').then((r) => (r.ok ? r.json() : null)),
-        fetch('/api/ledger').then((r) => (r.ok ? r.json() : null)),
-        fetch('/api/drills').then((r) => (r.ok ? r.json() : null)),
-        fetch('/api/live-logs').then((r) => (r.ok ? r.json() : null)),
-        fetch('/api/workflows/last-run').then((r) => (r.ok ? r.json() : null)),
+        safeJson('/api/status', null),
+        safeJson('/api/kpi', []),
+        safeJson('/api/diagnostics', null),
+        safeJson('/api/ledger', null),
+        safeJson('/api/drills', []),
+        safeJson('/api/live-logs', []),
+        safeJson('/api/workflows/last-run', null),
       ]);
 
-      if (!resStatus) {
-        setApiOnline(false);
-        return;
-      }
       setApiOnline(true);
-      setStatus(resStatus);
-      if (resStatus.last_reconcile) setReconcileResult(resStatus.last_reconcile);
+      if (resStatus) {
+        setStatus(resStatus);
+        if (!hasPromptedOnboarding.current && resStatus.is_configured === false) {
+          hasPromptedOnboarding.current = true;
+          setShowOnboarding(true);
+        }
+      }
       if (resKpis) setKpis(resKpis);
       if (resDiag) setDiagnostics(resDiag);
       if (resLedger) setLedger(resLedger);
       if (resDrills) setDrillHistory(resDrills);
       if (resLogs) setLiveLogs(resLogs);
 
-      if (resLastRun && resLastRun.summary) {
-        setWorkflowRun((prev) => {
-          if (prev.state === 'running') return prev;
-          if (prev.state === 'idle' || !prev.runId) {
-            try {
-              localStorage.setItem('sf_dr_last_run', JSON.stringify(resLastRun));
-            } catch {
-              // ignore
-            }
-            return resLastRun;
-          }
-          return prev;
-        });
+      // Hydrate last workflow run on initial load
+      if (resLastRun && workflowRun.state === 'idle') {
+        setWorkflowRun((prev) => ({
+          ...prev,
+          runId: resLastRun.run_id,
+          workflow: resLastRun.workflow,
+          title: `${resLastRun.title} (Completed in ${resLastRun.duration_s || 0}s)`,
+          state: resLastRun.state || 'success',
+          elapsedS: resLastRun.duration_s || 0,
+          steps: (resLastRun.steps || []).map((s) => ({
+            name: s.name,
+            status: s.status,
+            durationS: s.duration_s,
+            expanded: false,
+            logs: s.logs || [],
+          })),
+        }));
       }
     } catch {
       setApiOnline(false);
-    } finally {
-      setLoading(false);
     }
-  }, []);
+  }, [workflowRun.state]);
 
   useEffect(() => {
     fetchTelemetry();
-  }, [fetchTelemetry]);
-
-  useEffect(() => {
-    if (!autoRefresh) return undefined;
-    const id = setInterval(fetchTelemetry, 2500);
-    return () => clearInterval(id);
+    if (!autoRefresh) return;
+    const interval = setInterval(fetchTelemetry, 2500);
+    return () => clearInterval(interval);
   }, [autoRefresh, fetchTelemetry]);
 
-  // Auto-open SaaS Account Onboarding on initial load if no accounts configured
+  // ---------------------------------------------------------------------------
+  // Live Stopwatch Effect
+  // ---------------------------------------------------------------------------
   useEffect(() => {
-    if (status && status.is_configured === false && !hasPromptedOnboarding.current) {
-      hasPromptedOnboarding.current = true;
-      setShowOnboarding(true);
+    if (workflowRun.state !== 'running' || !workflowRun.startedAtMs) return;
+    const tick = setInterval(() => {
+      const now = Date.now();
+      const totalElapsed = parseFloat(((now - workflowRun.startedAtMs) / 1000).toFixed(1));
+      setWorkflowRun((prev) => ({ ...prev, elapsedS: totalElapsed }));
+    }, 100);
+    return () => clearInterval(tick);
+  }, [workflowRun.state, workflowRun.startedAtMs]);
+
+  // ---------------------------------------------------------------------------
+  // Execute Workflow via Server-Sent Events (SSE)
+  // ---------------------------------------------------------------------------
+  const startLiveWorkflow = useCallback(
+    async (workflowType) => {
+      if (workflowRun.state === 'running') return;
+
+      const runId = `RUN-${Date.now().toString().slice(-6)}`;
+      const startTime = Date.now();
+      setConsoleTab('workflow');
+
+      setWorkflowRun({
+        runId,
+        workflow: workflowType,
+        title: `Executing ${workflowType.toUpperCase()} Workflow (${runId})...`,
+        state: 'running',
+        startedAtMs: startTime,
+        elapsedS: 0,
+        activeStepIdx: 0,
+        stepStartedAtMs: startTime,
+        stepElapsedS: 0,
+        steps: [],
+      });
+
+      if (consoleRef.current) {
+        consoleRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+
+      try {
+        const url = `/api/workflows/live-stream?workflow=${encodeURIComponent(workflowType)}`;
+        const es = new EventSource(url);
+        let finished = false;
+
+        es.onmessage = (ev) => {
+          if (!ev.data) return;
+          let msg;
+          try {
+            msg = JSON.parse(ev.data);
+          } catch {
+            return;
+          }
+
+          if (msg.type === 'workflow_init') {
+            setWorkflowRun((prev) => ({
+              ...prev,
+              runId: msg.run_id || prev.runId,
+              title: `${msg.title} (${msg.run_id || prev.runId})`,
+              steps: (msg.steps || []).map((st, i) => ({
+                idx: i,
+                name: typeof st === 'string' ? st : st.name,
+                status: i === 0 ? 'running' : 'queued',
+                durationS: null,
+                logs: [],
+                expanded: i === 0,
+              })),
+            }));
+          } else if (msg.type === 'step_start') {
+            const idx = msg.step_index;
+            setWorkflowRun((prev) => ({
+              ...prev,
+              activeStepIdx: idx,
+              stepStartedAtMs: Date.now(),
+              steps: prev.steps.map((st, i) =>
+                i === idx ? { ...st, status: 'running', expanded: true } : st
+              ),
+            }));
+          } else if (msg.type === 'step_log') {
+            const stepIdx = msg.step_index ?? 0;
+            setWorkflowRun((prev) => ({
+              ...prev,
+              steps: prev.steps.map((st, i) =>
+                i === stepIdx ? { ...st, logs: [...st.logs, msg] } : st
+              ),
+            }));
+          } else if (msg.type === 'step_done') {
+            const idx = msg.step_index;
+            setWorkflowRun((prev) => ({
+              ...prev,
+              steps: prev.steps.map((st, i) =>
+                i === idx
+                  ? { ...st, status: 'done', durationS: msg.duration_s, expanded: false }
+                  : i === idx + 1
+                  ? { ...st, status: 'running', expanded: true }
+                  : st
+              ),
+            }));
+          } else if (msg.type === 'telemetry_refresh') {
+            fetchTelemetry();
+          } else if (msg.type === 'workflow_done') {
+            finished = true;
+            es.close();
+            const totalDuration = msg.total_s ?? parseFloat(((Date.now() - startTime) / 1000).toFixed(2));
+            setWorkflowRun((prev) => ({
+              ...prev,
+              state: 'success',
+              elapsedS: totalDuration,
+              title: msg.summary || `${workflowType.toUpperCase()} Complete (${totalDuration}s)`,
+            }));
+            fetchTelemetry();
+          } else if (msg.type === 'workflow_error') {
+            finished = true;
+            es.close();
+            const totalDuration = parseFloat(((Date.now() - startTime) / 1000).toFixed(2));
+            setWorkflowRun((prev) => ({
+              ...prev,
+              state: 'error',
+              elapsedS: totalDuration,
+              title: `Workflow Error: ${msg.error || 'Execution failed'}`,
+              steps: prev.steps.map((st) =>
+                st.status === 'running'
+                  ? {
+                      ...st,
+                      status: 'error',
+                      expanded: true,
+                      logs: [...st.logs, { ts: msg.ts || '', level: 'ERROR', message: msg.error || 'Execution failed' }],
+                    }
+                  : st
+              ),
+            }));
+            fetchTelemetry();
+          }
+        };
+
+        es.onerror = () => {
+          if (finished) return;
+          es.close();
+          const totalDuration = parseFloat(((Date.now() - startTime) / 1000).toFixed(2));
+          setWorkflowRun((prev) => ({
+            ...prev,
+            state: 'error',
+            elapsedS: totalDuration,
+            title: `Workflow execution failed or connection interrupted`,
+          }));
+          fetchTelemetry();
+        };
+      } catch {
+        setWorkflowRun((prev) => ({
+          ...prev,
+          state: 'error',
+          title: 'Failed to initiate workflow stream',
+        }));
+      }
+    },
+    [fetchTelemetry, workflowRun.state]
+  );
+
+  const toggleStepExpand = (stepIdx) => {
+    setWorkflowRun((prev) => ({
+      ...prev,
+      steps: prev.steps.map((s, i) => (i === stepIdx ? { ...s, expanded: !s.expanded } : s)),
+    }));
+  };
+
+  const handleToggleAwsOutage = async (enableOutage) => {
+    try {
+      await fetch('/api/watchdog/outage', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ simulate: enableOutage }),
+      });
+      fetchTelemetry();
+    } catch {
+      // ignore
     }
-  }, [status]);
+  };
 
   const handleDownloadPdfReport = async () => {
     try {
       setDownloadingPdf(true);
-      const res = await fetch('/api/reports/pdf/latest-migrations');
-      if (!res.ok) {
-        const errText = await res.text();
-        throw new Error(errText || 'Failed to generate PDF report');
+      const res = await fetch('/api/reports/executive-pdf');
+      if (res.ok) {
+        const blob = await res.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `Snowflake_MultiCloud_DR_Compliance_Audit_${new Date().toISOString().slice(0, 10)}.pdf`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        window.URL.revokeObjectURL(url);
       }
-      const blob = await res.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `MultiCloud_DR_Audit_Certificate_${new Date().toISOString().slice(0, 10)}.pdf`;
-      document.body.appendChild(a);
-      a.click();
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
-    } catch (err) {
-      alert('Error downloading PDF audit certificate: ' + (err?.message || err));
+    } catch {
+      // ignore
     } finally {
       setDownloadingPdf(false);
     }
   };
 
-  // Real-time 100ms stopwatch ticker ONLY while a real Snowflake workflow is actively executing
-  useEffect(() => {
-    if (workflowRun.state !== 'running') return undefined;
-    const id = setInterval(() => {
-      const now = Date.now();
-      setWorkflowRun((prev) => {
-        if (prev.state !== 'running') return prev;
-        return {
-          ...prev,
-          elapsedS: prev.startedAtMs ? ((now - prev.startedAtMs) / 1000).toFixed(1) : 0,
-          stepElapsedS: prev.stepStartedAtMs ? ((now - prev.stepStartedAtMs) / 1000).toFixed(1) : 0,
-        };
-      });
-    }, 100);
-    return () => clearInterval(id);
-  }, [workflowRun.state]);
-
-  // Launch a real Server-Sent Events (SSE) workflow on Snowflake (GitHub Actions live streaming)
-  const startLiveWorkflow = useCallback(
-    (workflowType, customBatchRows) => {
-      if (workflowBusyRef.current) return;
-      workflowBusyRef.current = true;
-
-      if (esRef.current) {
-        esRef.current.close();
-        esRef.current = null;
-      }
-
-      setConsoleTab('workflow');
-      if (consoleRef.current) {
-        consoleRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-      }
-
-      const nowMs = Date.now();
-      setWorkflowRun({
-        runId: 'STARTING',
-        workflow: workflowType,
-        title: `Connecting to Snowflake for '${workflowType}'...`,
-        state: 'running',
-        startedAtMs: nowMs,
-        elapsedS: '0.0',
-        activeStepIdx: -1,
-        stepStartedAtMs: nowMs,
-        stepElapsedS: '0.0',
-        steps: [],
-        summary: '',
-        error: null,
-      });
-
-      const rowsParam = customBatchRows || batchSize || 1000;
-      const url = `/api/workflows/stream/${encodeURIComponent(workflowType)}?batch_rows=${rowsParam}&operator=${encodeURIComponent('Live Web Console')}`;
-      const es = new EventSource(url);
-      esRef.current = es;
-
-      es.onmessage = (evt) => {
-        let msg;
-        try {
-          msg = JSON.parse(evt.data);
-        } catch {
-          return;
-        }
-
-        if (msg.type === 'workflow_init') {
-          setWorkflowRun((prev) => ({
-            ...prev,
-            runId: msg.run_id,
-            workflow: msg.workflow,
-            title: msg.title,
-            steps: (msg.steps || []).map((stTitle) => ({
-              title: stTitle,
-              status: 'queued',
-              duration_s: null,
-              logs: [],
-              expanded: false,
-            })),
-          }));
-        } else if (msg.type === 'step_start') {
-          const idx = msg.step_index;
-          setWorkflowRun((prev) => ({
-            ...prev,
-            activeStepIdx: idx,
-            stepStartedAtMs: Date.now(),
-            stepElapsedS: '0.0',
-            steps: prev.steps.map((s, i) =>
-              i === idx ? { ...s, status: 'running', expanded: true } : s
-            ),
-          }));
-        } else if (msg.type === 'step_log') {
-          const idx = msg.step_index;
-          setWorkflowRun((prev) => ({
-            ...prev,
-            steps: prev.steps.map((s, i) =>
-              i === idx
-                ? {
-                    ...s,
-                    logs: [
-                      ...s.logs,
-                      {
-                        ts: msg.ts,
-                        account: msg.account,
-                        message: msg.message,
-                        sql: msg.sql,
-                        sfqid: msg.sfqid,
-                        level: msg.level,
-                      },
-                    ],
-                  }
-                : s
-            ),
-          }));
-        } else if (msg.type === 'telemetry_refresh') {
-          fetchTelemetry();
-        } else if (msg.type === 'step_done') {
-          const idx = msg.step_index;
-          setWorkflowRun((prev) => ({
-            ...prev,
-            steps: prev.steps.map((s, i) =>
-              i === idx ? { ...s, status: 'done', duration_s: msg.duration_s } : s
-            ),
-          }));
-        } else if (msg.type === 'workflow_done') {
-          if (msg.reconcile) {
-            setReconcileResult(msg.reconcile);
-          }
-          setWorkflowRun((prev) => {
-            const nextState = {
-              ...prev,
-              state: 'success',
-              elapsedS: msg.total_s,
-              activeStepIdx: -1,
-              summary: msg.summary || `Completed in ${msg.total_s}s`,
-            };
-            try {
-              localStorage.setItem('sf_dr_last_run', JSON.stringify(nextState));
-            } catch {
-              // ignore
-            }
-            return nextState;
-          });
-          workflowBusyRef.current = false;
-          es.close();
-          esRef.current = null;
-          fetchTelemetry();
-        } else if (msg.type === 'workflow_error') {
-          setWorkflowRun((prev) => ({
-            ...prev,
-            state: 'error',
-            error: msg.error || 'Snowflake execution failed',
-            steps: prev.steps.map((s, i) =>
-              i === prev.activeStepIdx ? { ...s, status: 'error', expanded: true } : s
-            ),
-          }));
-          workflowBusyRef.current = false;
-          es.close();
-          esRef.current = null;
-          fetchTelemetry();
-        }
-      };
-
-      es.onerror = () => {
-        workflowBusyRef.current = false;
-        es.close();
-        esRef.current = null;
-        setWorkflowRun((prev) =>
-          prev.state === 'running'
-            ? { ...prev, state: 'error', error: 'SSE stream disconnected from backend server.' }
-            : prev
-        );
-      };
-    },
-    [batchSize, fetchTelemetry]
-  );
-
-  // Continuous Real Snowflake Ingestion + WAN Replication Loop when toggled ON
-  useEffect(() => {
-    if (!autoStreamLoop) return undefined;
-    if (!workflowBusyRef.current) {
-      startLiveWorkflow('ingest_sync', batchSize);
-    }
-    const loopId = setInterval(() => {
-      if (!workflowBusyRef.current) {
-        startLiveWorkflow('ingest_sync', batchSize);
-      }
-    }, 20000);
-    return () => clearInterval(loopId);
-  }, [autoStreamLoop, batchSize, startLiveWorkflow]);
-
-  const toggleStepExpand = (idx) => {
-    setWorkflowRun((prev) => ({
-      ...prev,
-      steps: prev.steps.map((s, i) => (i === idx ? { ...s, expanded: !s.expanded } : s)),
-    }));
-  };
-
-  const handleProbeNow = async () => {
-    setLoading(true);
-    try {
-      await fetch('/api/actions/probe-now', { method: 'POST' });
-      await fetchTelemetry();
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const copyHandle = () => {
-    if (!status?.global_redirect_handle) return;
-    navigator.clipboard.writeText(status.global_redirect_handle);
-    setCopiedHandle(true);
-    setTimeout(() => setCopiedHandle(false), 2000);
-  };
-
-  const handleWatchdogToggle = async (newEnabled) => {
-    try {
-      await fetch('/api/actions/watchdog', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ enabled: newEnabled }),
-      });
-      await fetchTelemetry();
-    } catch {
-      // ignore
+    if (status?.global_redirect_handle) {
+      navigator.clipboard.writeText(status.global_redirect_handle);
+      setCopiedHandle(true);
+      setTimeout(() => setCopiedHandle(false), 2000);
     }
   };
 
-  const handleToggleAwsOutage = async (injectOutage) => {
-    setConsoleTab('probes');
-    if (consoleRef.current) {
-      consoleRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    }
-    try {
-      await fetch('/api/actions/watchdog', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ simulate_aws_outage: injectOutage }),
-      });
-      await fetchTelemetry();
-    } catch {
-      // ignore
-    }
-  };
-
-  const handleSimulateGitPush = async (mode) => {
-    setConsoleTab('probes');
-    try {
-      await fetch('/api/webhooks/git-push', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mode }),
-      });
-      await fetchTelemetry();
-    } catch {
-      // ignore
-    }
-  };
-
+  // Telemetry Snapshot references
   const awsSnap = status?.aws || diagnostics?.aws || null;
   const azSnap = status?.azure || diagnostics?.azure || null;
   const anycastSnap = status?.anycast || diagnostics?.anycast || null;
@@ -477,13 +347,13 @@ export default function App() {
   const totalCreditQuota =
     awsSnap?.credit_quota != null && azSnap?.credit_quota != null
       ? (awsSnap.credit_quota + azSnap.credit_quota).toFixed(1)
-      : '20.0';
+      : '--';
   const creditPct =
-    totalCreditsUsed !== '--'
+    totalCreditsUsed !== '--' && totalCreditQuota !== '--'
       ? Math.min(100, (parseFloat(totalCreditsUsed) / parseFloat(totalCreditQuota)) * 100)
       : 0;
 
-  // Build real dynamic SVG polyline from live telemetry_timeline
+  // Real Dynamic SVG Polyline from live telemetry_timeline
   const timeline = diagnostics?.telemetry_timeline || [];
   const maxPing = Math.max(500, ...timeline.map((p) => Math.max(p.aws_ping_ms || 0, p.azure_ping_ms || 0)));
   const buildPolyline = (key) => {
@@ -501,206 +371,36 @@ export default function App() {
       .join(' ');
   };
 
-  const filteredLedger = ledger.filter(
-    (item) =>
-      item.name.toLowerCase().includes(tableSearch.toLowerCase()) ||
-      item.provider.toLowerCase().includes(tableSearch.toLowerCase()) ||
-      item.target.toLowerCase().includes(tableSearch.toLowerCase())
-  );
-
   const isWorkflowBusy = workflowRun.state === 'running';
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] flex flex-col md:flex-row text-slate-800">
       {/* ============================================================== */}
-      {/* SIDEBAR: Real Multi-Cloud Connectivity & Controls              */}
+      {/* MODULAR SIDEBAR: Multi-Cloud Connectivity & Watchdog Controls  */}
       {/* ============================================================== */}
-      <aside className="w-full md:w-72 bg-white border-r border-slate-200 flex flex-col justify-between shrink-0 p-5 shadow-xs">
-        <div className="space-y-5">
-          <div className="flex items-center space-x-3 pb-4 border-b border-slate-100">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white shadow-md">
-              <Shield className="w-5 h-5" />
-            </div>
-            <div>
-              <h2 className="text-sm font-black text-slate-900 leading-tight">Auto Fail-Over</h2>
-              <p className="text-[11px] text-slate-500 font-medium">Autonomous Cloud Resiliency</p>
-            </div>
-          </div>
-
-          {/* Real Cloud Account Status Badges */}
-          <div>
-            <div className="section-tag mb-2.5 flex items-center justify-between">
-              <span>Live Snowflake Accounts</span>
-              <span
-                className={`w-2 h-2 rounded-full ${
-                  apiOnline && status?.status === 'HEALTHY' ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'
-                }`}
-              ></span>
-            </div>
-            <div className="space-y-2">
-              <div className="p-2.5 rounded-lg border border-slate-200 bg-slate-50/70">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-2">
-                    <span
-                      className={`w-2 h-2 rounded-full ${
-                        awsSnap?.healthy ? 'bg-emerald-500' : 'bg-amber-400 animate-pulse'
-                      }`}
-                    ></span>
-                    <span className="text-xs font-bold text-slate-800">AWS us-east-1</span>
-                  </div>
-                  <span className="text-[10px] font-mono font-bold text-slate-600 bg-white px-1.5 py-0.5 rounded border border-slate-200">
-                    {awsSnap?.locator || 'AWC63551'}
-                  </span>
-                </div>
-                <div className="mt-1 flex justify-between text-[10px] text-slate-500">
-                  <span>{awsSnap?.fg_is_primary ? '🟢 PRIMARY (R/W)' : '🔵 REPLICA (R/O)'}</span>
-                  <span>{awsSnap?.ping_ms != null ? `${awsSnap.ping_ms} ms` : 'probing...'}</span>
-                </div>
-              </div>
-
-              <div className="p-2.5 rounded-lg border border-slate-200 bg-slate-50/70">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-2">
-                    <span
-                      className={`w-2 h-2 rounded-full ${
-                        azSnap?.healthy ? 'bg-emerald-500' : 'bg-amber-400 animate-pulse'
-                      }`}
-                    ></span>
-                    <span className="text-xs font-bold text-slate-800">Azure East US 2</span>
-                  </div>
-                  <span className="text-[10px] font-mono font-bold text-slate-600 bg-white px-1.5 py-0.5 rounded border border-slate-200">
-                    {azSnap?.locator || 'LQB72917'}
-                  </span>
-                </div>
-                <div className="mt-1 flex justify-between text-[10px] text-slate-500">
-                  <span>{azSnap?.fg_is_primary ? '🟢 PRIMARY (R/W)' : '🔵 REPLICA (R/O)'}</span>
-                  <span>{azSnap?.ping_ms != null ? `${azSnap.ping_ms} ms` : 'probing...'}</span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Global Client Redirect Anycast Handle */}
-          <div className="enterprise-card p-3.5 bg-slate-50/50">
-            <div className="section-tag mb-1.5 flex items-center justify-between">
-              <span>Global Anycast DNS</span>
-              <Network className="w-3.5 h-3.5 text-blue-600" />
-            </div>
-            <div className="p-2 bg-white rounded border border-slate-200 text-[11px] font-mono break-all text-slate-700 select-all mb-2">
-              {status?.global_redirect_handle || 'Probing SHOW CONNECTIONS...'}
-            </div>
-            <div className="text-[10px] text-slate-600 mb-2 flex items-center justify-between">
-              <span>Resolved Target:</span>
-              <strong className="text-blue-700 font-mono">
-                {anycastSnap?.landed_locator
-                  ? `${anycastSnap.landed_locator} (${anycastSnap.landed_region})`
-                  : 'Probing DNS...'}
-              </strong>
-            </div>
-            <div className="grid grid-cols-2 gap-1.5">
-              <button
-                onClick={copyHandle}
-                className="flex items-center justify-center space-x-1 py-1.5 px-2 bg-white hover:bg-slate-100 border border-slate-200 rounded text-[11px] font-bold text-slate-700 transition cursor-pointer"
-              >
-                {copiedHandle ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3 text-slate-500" />}
-                <span>{copiedHandle ? 'Copied' : 'Copy URL'}</span>
-              </button>
-              <button
-                onClick={handleProbeNow}
-                className="flex items-center justify-center space-x-1 py-1.5 px-2 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded text-[11px] font-bold text-blue-700 transition cursor-pointer"
-              >
-                <RefreshCw className={`w-3 h-3 ${loading ? 'animate-spin' : ''}`} />
-                <span>Probe DNS</span>
-              </button>
-            </div>
-          </div>
-
-          {/* Autonomous 3-Strike Watchdog Sentry & Git Push Automation */}
-          <div className="enterprise-card p-3.5 bg-slate-50/70 border border-indigo-200">
-            <div className="section-tag mb-2 flex items-center justify-between">
-              <span className="text-indigo-900 font-bold">3-Strike Watchdog Sentry</span>
-              <span
-                className={`text-[10px] font-black px-1.5 py-0.5 rounded border ${
-                  status?.watchdog?.enabled
-                    ? 'bg-emerald-50 text-emerald-700 border-emerald-300'
-                    : 'bg-amber-50 text-amber-800 border-amber-300'
-                }`}
-              >
-                {status?.watchdog?.enabled ? 'AUTO-FAILOVER ON' : 'MANUAL MODE'}
-              </span>
-            </div>
-
-            {/* 3-Strike Visual Indicator */}
-            <div className="flex items-center justify-between bg-white p-2 rounded border border-slate-200 mb-2">
-              <span className="text-[11px] font-bold text-slate-700">AWS Failed Strikes:</span>
-              <div className="flex items-center space-x-1.5">
-                {[1, 2, 3].map((s) => {
-                  const activeStrike = (status?.watchdog?.consecutive_failures || 0) >= s;
-                  return (
-                    <span
-                      key={s}
-                      className={`w-5 h-5 rounded-full text-[10px] font-black flex items-center justify-center border ${
-                        activeStrike
-                          ? 'bg-red-600 text-white border-red-700 animate-bounce'
-                          : 'bg-slate-100 text-slate-400 border-slate-200'
-                      }`}
-                    >
-                      {s}
-                    </span>
-                  );
-                })}
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <div className="text-[11px] text-indigo-900/80 font-semibold flex items-center justify-between">
-                <span>Watchdog Mode:</span>
-                <span className="font-bold text-indigo-700">Autonomous (Active)</span>
-              </div>
-              <button
-                onClick={() => handleToggleAwsOutage(!status?.watchdog?.simulate_aws_outage)}
-                className={`w-full py-2 px-3 rounded-lg text-xs font-bold transition shadow-xs flex items-center justify-center space-x-1.5 cursor-pointer ${
-                  status?.watchdog?.simulate_aws_outage
-                    ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
-                    : 'bg-red-600 hover:bg-red-700 text-white'
-                }`}
-              >
-                <span>
-                  {status?.watchdog?.simulate_aws_outage
-                    ? '✓ Clear Outage & Restore AWS Probes'
-                    : '⚡ Inject AWS Outage (Test 3 Strikes)'}
-                </span>
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* Live FinOps Resource Monitor Footer (from real SHOW RESOURCE MONITORS) */}
-        <div className="pt-4 border-t border-slate-100 text-[11px] text-slate-500">
-          <div className="flex justify-between items-center mb-1">
-            <span className="font-bold text-slate-700">Live DR_CREDIT_GUARD:</span>
-            <span className="font-black text-emerald-600">IDLE_TIMEOUT 60s</span>
-          </div>
-          <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
-            <div className="bg-emerald-500 h-full transition-all duration-500" style={{ width: `${creditPct}%` }}></div>
-          </div>
-          <div className="flex justify-between text-[10px] text-slate-400 mt-1 tabular-nums">
-            <span>Used: {totalCreditsUsed} Cr</span>
-            <span>Quota: {totalCreditQuota} Cr</span>
-          </div>
-        </div>
-      </aside>
+      <Sidebar
+        apiOnline={apiOnline}
+        status={status}
+        awsSnap={awsSnap}
+        azSnap={azSnap}
+        anycastSnap={anycastSnap}
+        totalCreditsUsed={totalCreditsUsed}
+        totalCreditQuota={totalCreditQuota}
+        creditPct={creditPct}
+        copiedHandle={copiedHandle}
+        copyHandle={copyHandle}
+      />
 
       {/* ============================================================== */}
       {/* MAIN CONTENT AREA                                              */}
       {/* ============================================================== */}
-      <main className="flex-1 flex flex-col min-w-0 overflow-y-auto">
+      <main className="flex-1 flex flex-col min-w-0 max-w-full overflow-x-hidden overflow-y-auto">
         {!apiOnline && (
           <div className="bg-red-600 text-white px-6 py-2.5 text-xs font-bold flex items-center justify-between">
             <div className="flex items-center space-x-2">
               <AlertTriangle className="w-4 h-4" />
               <span>
-                Backend API on http://127.0.0.1:8000 is not reachable. Start uvicorn to stream live Snowflake data (no fake fallback values are shown).
+                Backend API on http://127.0.0.1:8000 is not reachable. Ensure FastAPI server is running.
               </span>
             </div>
             <button onClick={fetchTelemetry} className="px-2.5 py-1 bg-white text-red-700 rounded font-black cursor-pointer">
@@ -709,60 +409,16 @@ export default function App() {
           </div>
         )}
 
-        {/* Header */}
-        <header className="bg-white border-b border-slate-200 px-6 py-4 sticky top-0 z-20 shadow-2xs">
-          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-            <div>
-              <div className="flex items-center space-x-2 text-xs text-slate-500 font-semibold mb-1">
-                <span>Live Snowflake Telemetry</span>
-                <span>/</span>
-                <span className="text-blue-600 font-bold">
-                  Probe #{status?.probe_count ?? 0} · Commit {status?.git?.commit || 'HEAD'} ({status?.git?.branch || 'main'})
-                </span>
-              </div>
-              <h1 className="text-xl md:text-2xl font-black text-slate-900 tracking-tight">
-                Auto Fail-Over
-              </h1>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-2.5">
-              <button
-                onClick={handleDownloadPdfReport}
-                disabled={downloadingPdf}
-                className="flex items-center space-x-1.5 bg-white hover:bg-slate-50 text-slate-800 border border-slate-300 px-3 py-1.5 rounded-lg text-xs font-bold shadow-xs transition cursor-pointer"
-                title="Download Executive DR Compliance Certificate & Audit for Latest 5 Migrations"
-              >
-                {downloadingPdf ? (
-                  <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-600" />
-                ) : (
-                  <Download className="w-3.5 h-3.5 text-blue-600" />
-                )}
-                <span>📄 Export Audit PDF</span>
-              </button>
-
-              <button
-                onClick={() => setShowOnboarding(true)}
-                className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-bold shadow-xs transition cursor-pointer ${
-                  status?.is_configured
-                    ? 'bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300'
-                    : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white animate-pulse'
-                }`}
-                title="Configure Primary & Secondary Snowflake Accounts"
-              >
-                <Database className="w-3.5 h-3.5" />
-                <span>{status?.is_configured ? '🔗 Manage Accounts' : '⚡ Connect Accounts'}</span>
-              </button>
-
-              <div className="flex items-center space-x-2 bg-emerald-50 text-emerald-800 border border-emerald-200 px-3 py-1.5 rounded-lg text-xs font-bold shadow-2xs">
-                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                <span>{status?.is_configured ? 'Live Telemetry Active (2.5s)' : 'Standby Mode'}</span>
-              </div>
-            </div>
-          </div>
-        </header>
+        {/* Modular Executive Header Bar */}
+        <DashboardHeader
+          status={status}
+          downloadingPdf={downloadingPdf}
+          handleDownloadPdfReport={handleDownloadPdfReport}
+          setShowOnboarding={setShowOnboarding}
+        />
 
         <div className="p-6 space-y-6">
-          {/* SaaS Standby Banner when unconfigured */}
+          {/* SaaS Setup Banner when unconfigured */}
           {status && status.is_configured === false && (
             <div className="bg-gradient-to-r from-blue-950 via-indigo-950 to-slate-900 border border-blue-500/50 rounded-xl p-5 text-white shadow-lg flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
               <div className="space-y-1">
@@ -787,11 +443,10 @@ export default function App() {
             </div>
           )}
 
-          {/* Toast Banner when accounts are primed and ready */}
+          {/* Toast Banner when accounts are linked and ready */}
           {readyToast && (
             <div className="bg-emerald-600 text-white px-5 py-3 rounded-xl shadow-lg flex items-center justify-between">
               <div className="flex items-center space-x-2.5 text-xs font-bold">
-                <CheckCircle2 className="w-5 h-5 text-emerald-100" />
                 <span>{readyToast}</span>
               </div>
               <button onClick={() => setReadyToast(null)} className="text-emerald-100 hover:text-white font-black text-sm cursor-pointer">
@@ -799,56 +454,15 @@ export default function App() {
               </button>
             </div>
           )}
-          {/* ============================================================== */}
-          {/* GIT PUSH & AUTONOMOUS WATCHDOG DEPLOYMENT BANNER               */}
-          {/* ============================================================== */}
-          <div className="enterprise-card p-4 bg-gradient-to-r from-indigo-950 via-slate-900 to-slate-900 text-white border border-indigo-700/60 shadow-md">
-            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-              <div className="space-y-1">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="px-2 py-0.5 rounded bg-indigo-500/30 border border-indigo-400/50 text-indigo-200 text-[10px] font-black uppercase tracking-wider">
-                    Git-Ops SaaS Automation Pipeline
-                  </span>
-                  <span className="text-xs font-mono text-emerald-300 font-bold">
-                    ● Active Branch: {status?.git?.branch || 'main'} @ {status?.git?.commit || 'HEAD'} (by {status?.git?.author || 'Operator'})
-                  </span>
-                  {status?.last_git_push_event && (
-                    <span className="px-2 py-0.5 rounded bg-emerald-500/20 border border-emerald-400/40 text-emerald-300 text-[10px] font-bold">
-                      Last Push Trigger: {status.last_git_push_event.received_at} ({status.last_git_push_event.mode})
-                    </span>
-                  )}
-                </div>
-                <p className="text-xs text-slate-300">
-                  <strong>Git Push Automation:</strong> Every <code className="text-amber-300 font-mono">git push</code> automatically boots the DR Control Plane, opens this dashboard, deploys health probes across AWS & Azure, and arms the{' '}
-                  <strong>{status?.watchdog?.enabled ? 'Autonomous 3-Strike Watchdog (Auto-Failover to Azure after 3 failed calls)' : 'Manual Failover Control Mode'}</strong>.
-                </p>
-              </div>
-
-              <div className="flex flex-wrap items-center gap-2 shrink-0">
-                <button
-                  onClick={() => handleSimulateGitPush('auto_watchdog')}
-                  className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-bold border border-indigo-400/40 transition cursor-pointer"
-                >
-                  🚀 Git Push (Auto 3-Strike Mode)
-                </button>
-                <button
-                  onClick={() => handleSimulateGitPush('manual_control')}
-                  className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-bold border border-slate-600 transition cursor-pointer"
-                >
-                  🛠️ Git Push (Manual Control Mode)
-                </button>
-              </div>
-            </div>
-          </div>
 
           {/* ============================================================== */}
-          {/* SECTION 1: Live Snowflake KPIs (Zero Hardcoded Values)         */}
+          {/* SECTION 1: Live Snowflake KPIs                                 */}
           {/* ============================================================== */}
           <div>
             <div className="section-tag mb-3 flex items-center justify-between">
               <span>Live Snowflake Telemetry (Cloud Services Metadata — 0 Idle Compute Burn)</span>
               <span className="text-[11px] text-slate-500 font-mono">
-                {status?.last_probe_at ? `Last Snowflake response: ${status.last_probe_at}` : 'Connecting to Snowflake...'}
+                {status?.last_probe_at ? `Last Snowflake response: ${status.last_probe_at}` : '--'}
               </span>
             </div>
 
@@ -856,9 +470,9 @@ export default function App() {
               {kpis.length === 0
                 ? Array.from({ length: 5 }).map((_, i) => (
                     <div key={i} className="enterprise-card p-4 animate-pulse">
-                      <div className="h-3 w-24 bg-slate-200 rounded mb-3"></div>
-                      <div className="h-7 w-32 bg-slate-200 rounded mb-2"></div>
-                      <div className="h-3 w-full bg-slate-100 rounded"></div>
+                      <div className="h-3 w-24 bg-slate-200 rounded mb-3" />
+                      <div className="h-7 w-32 bg-slate-200 rounded mb-2" />
+                      <div className="h-3 w-full bg-slate-100 rounded" />
                     </div>
                   ))
                 : kpis.map((kpi) => (
@@ -891,295 +505,15 @@ export default function App() {
           </div>
 
           {/* ============================================================== */}
-          {/* GITHUB ACTIONS-STYLE LIVE WORKFLOW & SQL STREAM RUNNER         */}
-          {/* ============================================================== */}
-          <div ref={consoleRef}>
-            <div className="section-tag mb-2.5 flex items-center justify-between">
-              <span className="flex items-center space-x-1.5">
-                <Terminal className="w-3.5 h-3.5 text-slate-700" />
-                <span>Live Execution Stream (GitHub Actions Real-Time SQL Runner)</span>
-              </span>
-              <div className="flex items-center space-x-2 text-xs">
-                <span className="text-slate-500 font-semibold">Batch size:</span>
-                <select
-                  value={batchSize}
-                  onChange={(e) => setBatchSize(Number(e.target.value))}
-                  className="bg-white border border-slate-300 rounded px-2 py-0.5 text-xs font-bold text-slate-700"
-                >
-                  <option value={500}>+500 rows</option>
-                  <option value={1000}>+1,000 rows</option>
-                  <option value={2500}>+2,500 rows</option>
-                  <option value={5000}>+5,000 rows</option>
-                </select>
-              </div>
-            </div>
-
-            <div className="rounded-xl overflow-hidden border border-slate-800 bg-[#0D1117] text-slate-200 shadow-lg">
-              {/* Dark Console Top Bar */}
-              <div className="px-4 py-3 bg-[#161B22] border-b border-slate-800 flex flex-wrap items-center justify-between gap-3">
-                <div className="flex items-center space-x-2">
-                  <button
-                    onClick={() => setConsoleTab('workflow')}
-                    className={`px-3 py-1.5 rounded-md text-xs font-bold flex items-center space-x-1.5 transition cursor-pointer ${
-                      consoleTab === 'workflow'
-                        ? 'bg-blue-600 text-white'
-                        : 'text-slate-400 hover:text-white hover:bg-slate-800'
-                    }`}
-                  >
-                    {workflowRun.state === 'running' ? (
-                      <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-300" />
-                    ) : workflowRun.state === 'success' ? (
-                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-                    ) : workflowRun.state === 'error' ? (
-                      <XCircle className="w-3.5 h-3.5 text-red-400" />
-                    ) : (
-                      <Play className="w-3.5 h-3.5" />
-                    )}
-                    <span>Workflow Steps {workflowRun.runId ? `(${workflowRun.runId})` : ''}</span>
-                  </button>
-
-                  <button
-                    onClick={() => setConsoleTab('probes')}
-                    className={`px-3 py-1.5 rounded-md text-xs font-bold flex items-center space-x-1.5 transition cursor-pointer ${
-                      consoleTab === 'probes'
-                        ? 'bg-blue-600 text-white'
-                        : 'text-slate-400 hover:text-white hover:bg-slate-800'
-                    }`}
-                  >
-                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-                    <span>Live Background SQL Stream ({liveLogs.length})</span>
-                  </button>
-                </div>
-
-                {/* Live Real Stopwatch (No fake pre-filled numbers) */}
-                <div className="flex items-center space-x-3">
-                  {workflowRun.state !== 'idle' && (
-                    <div className="flex items-center space-x-2 bg-[#0D1117] px-3 py-1 rounded-md border border-slate-700 font-mono text-xs">
-                      <Clock className="w-3.5 h-3.5 text-amber-400" />
-                      <span className="font-bold text-white tabular-nums">{workflowRun.elapsedS}s</span>
-                      <span
-                        className={`text-[10px] font-bold uppercase px-1.5 py-0.5 rounded ${
-                          workflowRun.state === 'running'
-                            ? 'bg-amber-500/20 text-amber-300'
-                            : workflowRun.state === 'success'
-                            ? 'bg-emerald-500/20 text-emerald-300'
-                            : 'bg-red-500/20 text-red-300'
-                        }`}
-                      >
-                        {workflowRun.state}
-                      </span>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* TAB 1: GitHub Actions Expandable Step-by-Step Runner */}
-              {consoleTab === 'workflow' ? (
-                <div className="p-4 space-y-2 max-h-[460px] overflow-y-auto">
-                  <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-800/80">
-                    <div className="text-xs font-bold text-slate-200">{workflowRun.title}</div>
-                  </div>
-
-                  {workflowRun.steps.length === 0 ? (
-                    <div className="space-y-3">
-                      <div className="p-3 rounded-lg bg-[#161B22] border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                        <div className="text-xs text-slate-300">
-                          <span className="inline-block w-2 h-2 rounded-full bg-emerald-400 animate-pulse mr-2"></span>
-                          <strong>Live Snowflake Stream Active</strong> — Background SQL probes are streaming below every 5s. Click any workflow to watch expandable GitHub Actions steps live:
-                        </div>
-                        <div className="flex flex-wrap gap-2 shrink-0">
-                          <button
-                            onClick={() => startLiveWorkflow('ingest_sync', batchSize)}
-                            className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-xs font-bold cursor-pointer"
-                          >
-                            ▶ Ingest +{batchSize.toLocaleString()} & Sync
-                          </button>
-                          <button
-                            onClick={() => startLiveWorkflow('reconcile')}
-                            className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded text-xs font-bold cursor-pointer"
-                          >
-                            ▶ Live HASH_AGG Audit
-                          </button>
-                        </div>
-                      </div>
-
-                      <div className="rounded-lg border border-slate-800 bg-[#010409] p-3 font-mono text-[11px] space-y-1.5 max-h-[320px] overflow-y-auto">
-                        {liveLogs.length === 0 ? (
-                          <div className="text-slate-500 flex items-center space-x-2">
-                            <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-400" />
-                            <span>Opening RSA-2048 JWT session to Snowflake AWS & Azure...</span>
-                          </div>
-                        ) : (
-                          liveLogs.slice(0, 20).map((lg, i) => (
-                            <div key={i} className="leading-relaxed border-b border-slate-900/80 pb-1">
-                              <div className="flex flex-wrap items-baseline gap-x-2">
-                                <span className="text-slate-500">{lg.ts}</span>
-                                <span className="px-1.5 rounded bg-slate-800 text-cyan-300 text-[10px]">{lg.account}</span>
-                                <span
-                                  className={
-                                    lg.level === 'ERROR'
-                                      ? 'text-red-400 font-bold'
-                                      : lg.level === 'SUCCESS'
-                                      ? 'text-emerald-300'
-                                      : 'text-slate-200'
-                                  }
-                                >
-                                  {lg.message}
-                                </span>
-                                {lg.sfqid && <span className="text-purple-400 text-[10px]">[sfqid={lg.sfqid}]</span>}
-                              </div>
-                              {lg.sql && (
-                                <div className="pl-16 text-blue-300/80 text-[10px] truncate">
-                                  SQL&gt; {lg.sql}
-                                </div>
-                              )}
-                            </div>
-                          ))
-                        )}
-                      </div>
-                    </div>
-                  ) : (
-                    workflowRun.steps.map((step, idx) => (
-                      <div key={idx} className="rounded-lg border border-slate-800 bg-[#161B22]/70 overflow-hidden">
-                        <button
-                          onClick={() => toggleStepExpand(idx)}
-                          className="w-full px-3.5 py-2.5 flex items-center justify-between text-left hover:bg-slate-800/50 transition cursor-pointer"
-                        >
-                          <div className="flex items-center space-x-2.5 min-w-0">
-                            {step.expanded ? (
-                              <ChevronDown className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                            ) : (
-                              <ChevronRight className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                            )}
-                            {step.status === 'done' ? (
-                              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                            ) : step.status === 'running' ? (
-                              <Loader2 className="w-4 h-4 text-amber-400 animate-spin shrink-0" />
-                            ) : step.status === 'error' ? (
-                              <XCircle className="w-4 h-4 text-red-400 shrink-0" />
-                            ) : (
-                              <Circle className="w-4 h-4 text-slate-600 shrink-0" />
-                            )}
-                            <span
-                              className={`text-xs truncate ${
-                                step.status === 'running'
-                                  ? 'text-white font-bold'
-                                  : step.status === 'done'
-                                  ? 'text-slate-200 font-semibold'
-                                  : 'text-slate-500'
-                              }`}
-                            >
-                              Step {idx + 1}: {step.title}
-                            </span>
-                          </div>
-                          <span className="font-mono text-[11px] text-slate-400 tabular-nums shrink-0 ml-3">
-                            {step.status === 'done' && step.duration_s != null
-                              ? `${step.duration_s}s`
-                              : step.status === 'running'
-                              ? `${workflowRun.stepElapsedS}s...`
-                              : 'queued'}
-                          </span>
-                        </button>
-
-                        {step.expanded && (
-                          <div className="bg-[#010409] border-t border-slate-800 px-4 py-2.5 font-mono text-[11px] space-y-1.5">
-                            {step.logs.length === 0 ? (
-                              <div className="text-slate-500 italic">Waiting for Snowflake response...</div>
-                            ) : (
-                              step.logs.map((lg, lIdx) => (
-                                <div key={lIdx} className="leading-relaxed">
-                                  <div className="flex items-start space-x-2">
-                                    <span className="text-slate-600 select-none w-5 text-right shrink-0">{lIdx + 1}</span>
-                                    <span className="text-slate-500 shrink-0">{lg.ts}</span>
-                                    <span className="px-1.5 py-0.2 rounded bg-slate-800 text-cyan-300 text-[10px] shrink-0">
-                                      {lg.account}
-                                    </span>
-                                    <span
-                                      className={
-                                        lg.level === 'ERROR'
-                                          ? 'text-red-400 font-bold'
-                                          : lg.level === 'WARN'
-                                          ? 'text-amber-300'
-                                          : lg.level === 'SUCCESS'
-                                          ? 'text-emerald-300'
-                                          : 'text-slate-300'
-                                      }
-                                    >
-                                      {lg.message}
-                                    </span>
-                                  </div>
-                                  {lg.sql && (
-                                    <div className="pl-24 text-blue-300/90 text-[10px] break-all">
-                                      SQL&gt; {lg.sql}
-                                      {lg.sfqid ? <span className="ml-2 text-purple-300">[sfqid={lg.sfqid}]</span> : null}
-                                    </div>
-                                  )}
-                                </div>
-                              ))
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    ))
-                  )}
-
-                  {workflowRun.summary && workflowRun.state === 'success' && (
-                    <div className="mt-3 p-3 rounded-lg bg-emerald-950/50 border border-emerald-700/60 text-emerald-200 text-xs flex items-center space-x-2">
-                      <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                      <span className="font-semibold">{workflowRun.summary}</span>
-                    </div>
-                  )}
-
-                  {workflowRun.error && (
-                    <div className="mt-3 p-3 rounded-lg bg-red-950/60 border border-red-700 text-red-200 text-xs flex items-center space-x-2">
-                      <AlertTriangle className="w-4 h-4 text-red-400 shrink-0" />
-                      <span className="font-semibold">{workflowRun.error}</span>
-                    </div>
-                  )}
-                </div>
-              ) : (
-                /* TAB 2: Continuous Live Background SQL Probe Stream */
-                <div className="p-4 bg-[#010409] font-mono text-[11px] max-h-[420px] overflow-y-auto space-y-1.5">
-                  {liveLogs.length === 0 ? (
-                    <div className="text-slate-500">Connecting to Snowflake Cloud Services...</div>
-                  ) : (
-                    liveLogs.map((lg, i) => (
-                      <div key={i} className="flex flex-wrap items-baseline gap-x-2 border-b border-slate-900 pb-1">
-                        <span className="text-slate-500">{lg.ts}</span>
-                        <span className="px-1.5 rounded bg-slate-800 text-cyan-300 text-[10px]">{lg.account}</span>
-                        <span
-                          className={
-                            lg.level === 'ERROR'
-                              ? 'text-red-400'
-                              : lg.level === 'SUCCESS'
-                              ? 'text-emerald-300'
-                              : 'text-slate-200'
-                          }
-                        >
-                          {lg.message}
-                        </span>
-                        {lg.sfqid && <span className="text-purple-400 text-[10px]">[sfqid={lg.sfqid}]</span>}
-                      </div>
-                    ))
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* ============================================================== */}
-          {/* SECTION 3: Side-by-Side AWS vs Azure Authority + Live Chart    */}
+          {/* SECTION 2: Multi-Cloud Topology Cards & Live RTT Stream       */}
           {/* ============================================================== */}
           <div>
             <div className="section-tag mb-3 flex items-center justify-between">
-              <span>Real-Time Cloud Authority Comparison (AWS vs Azure Live State)</span>
-              <span className="text-[11px] text-slate-500 font-medium">
-                Flips live when Failover / Failback executes on Snowflake
-              </span>
+              <span>Multi-Cloud Snowflake Topology (Active Leader vs Standby Replica)</span>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-              {/* AWS Live Card */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {/* Primary Live Card */}
               <div
                 className={`enterprise-card p-5 border-t-4 ${
                   awsSnap?.fg_is_primary ? 'border-t-emerald-500 bg-emerald-50/15' : 'border-t-slate-300'
@@ -1188,10 +522,10 @@ export default function App() {
                 <div className="flex items-center justify-between mb-3">
                   <div>
                     <span className="text-[10px] font-black uppercase tracking-wider text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
-                      AWS Cloud · us-east-1
+                      {status?.is_configured ? `${awsSnap?.cloud || 'Primary Cloud'} · ${awsSnap?.region || 'us-east-1'}` : 'Primary Cloud · --'}
                     </span>
                     <h3 className="text-base font-black text-slate-900 mt-1">
-                      NNFCDXY-SF_AWS_PRIMARY ({awsSnap?.locator || 'AWC63551'})
+                      {status?.is_configured ? `${awsSnap?.account_name || 'PRIMARY_ACCOUNT'} (${awsSnap?.locator || '--'})` : 'Primary Cloud Account (--)'}
                     </h3>
                   </div>
                   <span
@@ -1201,7 +535,7 @@ export default function App() {
                         : 'bg-slate-100 text-slate-700 border-slate-300'
                     }`}
                   >
-                    {awsSnap?.fg_is_primary ? 'PRIMARY (READ-WRITE)' : 'REPLICA (READ-ONLY)'}
+                    {status?.is_configured ? (awsSnap?.fg_is_primary ? 'PRIMARY (READ-WRITE)' : 'REPLICA (READ-ONLY)') : 'UNCONFIGURED'}
                   </span>
                 </div>
 
@@ -1209,13 +543,15 @@ export default function App() {
                   <div className="flex justify-between">
                     <span className="text-slate-500">Client Redirect DNS:</span>
                     <strong className={awsSnap?.conn_is_primary ? 'text-emerald-700' : 'text-slate-500'}>
-                      {awsSnap?.conn_is_primary ? '100% ACTIVE TRAFFIC LEADER' : '0% STANDBY'}
+                      {status?.is_configured ? (awsSnap?.conn_is_primary ? '100% ACTIVE TRAFFIC LEADER' : '0% STANDBY') : '--'}
                     </strong>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-slate-500">FINANCIAL_TRANSACTIONS:</span>
+                    <span className="text-slate-500">
+                      {awsSnap?.row_count > 0 ? 'FINANCIAL_TRANSACTIONS:' : 'Hosted Database Rows:'}
+                    </span>
                     <strong className="text-slate-900 font-mono tabular-nums">
-                      {awsSnap?.row_count != null ? `${awsSnap.row_count.toLocaleString()} rows` : 'Querying...'}
+                      {status?.is_configured && awsSnap?.row_count != null ? `${awsSnap.row_count.toLocaleString()} rows` : '--'}
                     </strong>
                   </div>
                   <div className="flex justify-between">
@@ -1227,7 +563,7 @@ export default function App() {
                   <div className="flex justify-between">
                     <span className="text-slate-500">Resource Monitor Credits:</span>
                     <strong className="text-slate-800 font-mono">
-                      {awsSnap?.used_credits != null ? `${awsSnap.used_credits.toFixed(2)} / ${awsSnap.credit_quota} Cr` : '--'}
+                      {status?.is_configured && awsSnap?.used_credits != null ? `${awsSnap.used_credits.toFixed(2)} / ${awsSnap.credit_quota} Cr` : '--'}
                     </strong>
                   </div>
                   <div className="flex justify-between text-[10px] text-slate-400 font-mono pt-1">
@@ -1237,7 +573,7 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Azure Live Card */}
+              {/* Standby Live Card */}
               <div
                 className={`enterprise-card p-5 border-t-4 ${
                   azSnap?.fg_is_primary ? 'border-t-emerald-500 bg-emerald-50/15' : 'border-t-slate-300'
@@ -1246,10 +582,10 @@ export default function App() {
                 <div className="flex items-center justify-between mb-3">
                   <div>
                     <span className="text-[10px] font-black uppercase tracking-wider text-sky-700 bg-sky-50 px-2 py-0.5 rounded border border-sky-200">
-                      Microsoft Azure · eastus2
+                      {status?.is_configured ? `${azSnap?.cloud || 'Standby Cloud'} · ${azSnap?.region || 'East US 2'}` : 'Secondary Cloud · --'}
                     </span>
                     <h3 className="text-base font-black text-slate-900 mt-1">
-                      NNFCDXY-SF_AZURE_DR ({azSnap?.locator || 'LQB72917'})
+                      {status?.is_configured ? `${azSnap?.account_name || 'SECONDARY_ACCOUNT'} (${azSnap?.locator || '--'})` : 'Secondary Cloud Account (--)'}
                     </h3>
                   </div>
                   <span
@@ -1259,7 +595,7 @@ export default function App() {
                         : 'bg-slate-100 text-slate-700 border-slate-300'
                     }`}
                   >
-                    {azSnap?.fg_is_primary ? 'PRIMARY (READ-WRITE)' : 'REPLICA (READ-ONLY)'}
+                    {status?.is_configured ? (azSnap?.fg_is_primary ? 'PRIMARY (READ-WRITE)' : 'REPLICA (READ-ONLY)') : 'UNCONFIGURED'}
                   </span>
                 </div>
 
@@ -1267,13 +603,15 @@ export default function App() {
                   <div className="flex justify-between">
                     <span className="text-slate-500">Client Redirect DNS:</span>
                     <strong className={azSnap?.conn_is_primary ? 'text-emerald-700' : 'text-slate-500'}>
-                      {azSnap?.conn_is_primary ? '100% ACTIVE TRAFFIC LEADER' : '0% STANDBY'}
+                      {status?.is_configured ? (azSnap?.conn_is_primary ? '100% ACTIVE TRAFFIC LEADER' : '0% STANDBY') : '--'}
                     </strong>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-slate-500">FINANCIAL_TRANSACTIONS:</span>
+                    <span className="text-slate-500">
+                      {azSnap?.row_count > 0 ? 'FINANCIAL_TRANSACTIONS:' : 'Replicated Database Rows:'}
+                    </span>
                     <strong className="text-slate-900 font-mono tabular-nums">
-                      {azSnap?.row_count != null ? `${azSnap.row_count.toLocaleString()} rows` : 'Querying...'}
+                      {status?.is_configured && azSnap?.row_count != null ? `${azSnap.row_count.toLocaleString()} rows` : '--'}
                     </strong>
                   </div>
                   <div className="flex justify-between">
@@ -1285,7 +623,7 @@ export default function App() {
                   <div className="flex justify-between">
                     <span className="text-slate-500">Resource Monitor Credits:</span>
                     <strong className="text-slate-800 font-mono">
-                      {azSnap?.used_credits != null ? `${azSnap.used_credits.toFixed(2)} / ${azSnap.credit_quota} Cr` : '--'}
+                      {status?.is_configured && azSnap?.used_credits != null ? `${azSnap.used_credits.toFixed(2)} / ${azSnap.credit_quota} Cr` : '--'}
                     </strong>
                   </div>
                   <div className="flex justify-between text-[10px] text-slate-400 font-mono pt-1">
@@ -1295,7 +633,7 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Dynamic Live Probe RTT Chart (Plotted from real probes, zero hardcoded SVG points) */}
+              {/* Dynamic Live Probe RTT Chart */}
               <div className="enterprise-card p-5 flex flex-col justify-between">
                 <div>
                   <div className="flex items-center justify-between mb-2">
@@ -1311,7 +649,7 @@ export default function App() {
                   <div className="h-28 w-full bg-slate-50 rounded-lg border border-slate-200 p-2 relative">
                     {timeline.length === 0 ? (
                       <div className="h-full flex items-center justify-center text-xs text-slate-400">
-                        Collecting first live probe sample...
+                        {status?.is_configured ? 'Collecting first live probe sample...' : 'Standby mode (--)'}
                       </div>
                     ) : (
                       <svg className="w-full h-full overflow-visible" viewBox="0 0 300 80" preserveAspectRatio="none">
@@ -1333,106 +671,87 @@ export default function App() {
                     )}
                   </div>
                   <div className="flex justify-between text-[10px] text-slate-500 mt-2 font-semibold">
-                    <span className="text-amber-600">● AWS RTT: {awsSnap?.ping_ms ?? '--'} ms</span>
-                    <span className="text-sky-600">● Azure RTT: {azSnap?.ping_ms ?? '--'} ms</span>
+                    <span className="text-amber-600">● Primary RTT: {status?.is_configured ? (awsSnap?.ping_ms ?? '--') : '--'} ms</span>
+                    <span className="text-sky-600">● Secondary RTT: {status?.is_configured ? (azSnap?.ping_ms ?? '--') : '--'} ms</span>
                   </div>
                 </div>
 
                 <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-between text-xs font-bold text-slate-700">
                   <span>Replication Schedule:</span>
                   <span className="text-emerald-700 font-mono">
-                    {diagnostics?.data_health?.schedule || '10 MINUTE'}
+                    {status?.is_configured ? (diagnostics?.data_health?.schedule || '10 MINUTE') : '--'}
                   </span>
                 </div>
               </div>
             </div>
 
-            {/* ============================================================== */}
-            {/* LIVE HEALTH PROBE GRAPHS, STRIKE TIMELINE & K8S POD METADATA   */}
-            {/* ============================================================== */}
+            {/* Health Probes Availability Bar Strip */}
             <div className="mt-4 w-full">
-              {/* Multi-Cloud Probe Availability & Strike History Graph */}
               <div className="enterprise-card p-5 flex flex-col justify-between">
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <h3 className="text-sm font-black text-slate-900 flex items-center space-x-1.5">
-                      <Activity className="w-4 h-4 text-indigo-600" />
-                      <span>Live Health Probe Availability & 3-Strike Telemetry</span>
-                    </h3>
-                    <span className="text-[10px] font-bold bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded border border-indigo-200 font-mono">
-                      Uptime: {diagnostics?.probe_metadata?.uptime_seconds ?? 0}s
-                    </span>
-                  </div>
-                  <p className="text-xs text-slate-500 mb-3">
-                    Real-time per-probe health pulses (Green = 200 OK, Red = Strike Fault) across the last {timeline.length} probe cycles.
-                  </p>
-
-                  {/* Availability Bar Strip */}
-                  <div className="space-y-2.5 bg-slate-50 p-3 rounded-lg border border-slate-200">
-                    <div>
-                      <div className="flex justify-between text-[11px] font-bold mb-1">
-                        <span className="text-slate-700">AWS us-east-1 Probe Availability</span>
-                        <span className="text-emerald-700 font-mono">
-                          {diagnostics?.probe_metadata?.aws_uptime_pct ?? 100}% ({diagnostics?.probe_metadata?.aws_success ?? 0} OK / {diagnostics?.probe_metadata?.aws_failed ?? 0} Failed)
-                        </span>
-                      </div>
-                      <div className="flex items-center space-x-1 h-4">
-                        {timeline.length === 0 ? (
-                          <span className="text-[10px] text-slate-400">Sampling...</span>
-                        ) : (
-                          timeline.map((pt, i) => (
-                            <div
-                              key={i}
-                              title={`${pt.time} — AWS ${pt.aws_healthy === 0 ? 'FAILED (Strike)' : `${pt.aws_ping_ms}ms`}`}
-                              className={`flex-1 h-full rounded-xs transition-all ${
-                                pt.aws_healthy === 0 ? 'bg-red-500 animate-pulse' : 'bg-emerald-500'
-                              }`}
-                            />
-                          ))
-                        )}
-                      </div>
-                    </div>
-
-                    <div>
-                      <div className="flex justify-between text-[11px] font-bold mb-1">
-                        <span className="text-slate-700">Azure East US 2 Probe Availability</span>
-                        <span className="text-sky-700 font-mono">
-                          {diagnostics?.probe_metadata?.azure_uptime_pct ?? 100}% ({diagnostics?.probe_metadata?.azure_success ?? 0} OK / {diagnostics?.probe_metadata?.azure_failed ?? 0} Failed)
-                        </span>
-                      </div>
-                      <div className="flex items-center space-x-1 h-4">
-                        {timeline.length === 0 ? (
-                          <span className="text-[10px] text-slate-400">Sampling...</span>
-                        ) : (
-                          timeline.map((pt, i) => (
-                            <div
-                              key={i}
-                              title={`${pt.time} — Azure ${pt.azure_healthy === 0 ? 'FAILED' : `${pt.azure_ping_ms}ms`}`}
-                              className={`flex-1 h-full rounded-xs transition-all ${
-                                pt.azure_healthy === 0 ? 'bg-red-500' : 'bg-sky-500'
-                              }`}
-                            />
-                          ))
-                        )}
-                      </div>
-                    </div>
-                  </div>
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-sm font-black text-slate-900 flex items-center space-x-1.5">
+                    <Activity className="w-4 h-4 text-indigo-600" />
+                    <span>Live Health Probe Availability & 3-Strike Telemetry</span>
+                  </h3>
+                  <span className="text-[10px] font-bold bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded border border-indigo-200 font-mono">
+                    Uptime: {status?.is_configured ? `${diagnostics?.probe_metadata?.uptime_seconds ?? 0}s` : '--'}
+                  </span>
                 </div>
+                <p className="text-xs text-slate-500 mb-3">
+                  Real-time per-probe health pulses across the latest probe cycles.
+                </p>
 
-                <div className="mt-3 pt-2.5 border-t border-slate-100 grid grid-cols-3 gap-2 text-center text-[11px]">
-                  <div className="bg-slate-50 p-1.5 rounded border border-slate-200">
-                    <span className="text-slate-400 block text-[10px]">Total Probes</span>
-                    <strong className="text-slate-900 font-mono">#{status?.probe_count ?? 0}</strong>
+                <div className="space-y-2.5 bg-slate-50 p-3 rounded-lg border border-slate-200">
+                  <div>
+                    <div className="flex justify-between text-[11px] font-bold mb-1">
+                      <span className="text-slate-700">
+                        {status?.is_configured ? `${awsSnap?.cloud || 'Primary'} (${awsSnap?.region || 'us-east-1'}) Probe Availability` : 'Primary Cloud Probe Availability (--)'}
+                      </span>
+                      <span className="text-amber-700 font-mono">
+                        {status?.is_configured ? `${diagnostics?.probe_metadata?.aws_uptime_pct ?? 100}%` : '--'}
+                      </span>
+                    </div>
+                    <div className="flex items-center space-x-1 h-4">
+                      {timeline.length === 0 ? (
+                        <span className="text-[10px] text-slate-400">Sampling...</span>
+                      ) : (
+                        timeline.map((pt, i) => (
+                          <div
+                            key={i}
+                            title={`${pt.time} — Primary ${pt.aws_healthy === 0 ? 'FAILED (Strike)' : `${pt.aws_ping_ms}ms`}`}
+                            className={`flex-1 h-full rounded-xs transition-all ${
+                              pt.aws_healthy === 0 ? 'bg-red-500 animate-pulse' : 'bg-emerald-500'
+                            }`}
+                          />
+                        ))
+                      )}
+                    </div>
                   </div>
-                  <div className="bg-slate-50 p-1.5 rounded border border-slate-200">
-                    <span className="text-slate-400 block text-[10px]">Anycast DNS Checks</span>
-                    <strong className="text-blue-700 font-mono">{diagnostics?.probe_metadata?.anycast_probes ?? 0} Verified</strong>
-                  </div>
-                  <div className="bg-slate-50 p-1.5 rounded border border-slate-200">
-                    <span className="text-slate-400 block text-[10px]">Watchdog Strikes</span>
-                    <strong className={status?.watchdog?.consecutive_failures > 0 ? 'text-red-600 font-mono' : 'text-emerald-700 font-mono'}>
-                      {status?.watchdog?.consecutive_failures ?? 0} / {status?.watchdog?.failure_threshold ?? 3}
-                    </strong>
+
+                  <div>
+                    <div className="flex justify-between text-[11px] font-bold mb-1">
+                      <span className="text-slate-700">
+                        {status?.is_configured ? `${azSnap?.cloud || 'Secondary'} (${azSnap?.region || 'East US 2'}) Probe Availability` : 'Secondary Cloud Probe Availability (--)'}
+                      </span>
+                      <span className="text-sky-700 font-mono">
+                        {status?.is_configured ? `${diagnostics?.probe_metadata?.azure_uptime_pct ?? 100}%` : '--'}
+                      </span>
+                    </div>
+                    <div className="flex items-center space-x-1 h-4">
+                      {timeline.length === 0 ? (
+                        <span className="text-[10px] text-slate-400">Sampling...</span>
+                      ) : (
+                        timeline.map((pt, i) => (
+                          <div
+                            key={i}
+                            title={`${pt.time} — Secondary ${pt.azure_healthy === 0 ? 'FAILED' : `${pt.azure_ping_ms}ms`}`}
+                            className={`flex-1 h-full rounded-xs transition-all ${
+                              pt.azure_healthy === 0 ? 'bg-red-500' : 'bg-sky-500'
+                            }`}
+                          />
+                        ))
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1440,11 +759,33 @@ export default function App() {
           </div>
 
           {/* ============================================================== */}
-          {/* SECTION 4: Emergency Control Room & Live Actions               */}
+          {/* SECTION 3: Full-Stack Microservice Workload Hydration Matrix   */}
+          {/* ============================================================== */}
+          <WorkloadHydrationMatrix />
+
+          {/* ============================================================== */}
+          {/* SECTION 4: Live PaySim Transaction Ingestion Stream */}
+          {/* ============================================================== */}
+          <LiveTransactionStream />
+
+          {/* ============================================================== */}
+          {/* SECTION 5: GitHub Actions Style Live Workflow & SQL Stream     */}
+          {/* ============================================================== */}
+          <LiveExecutionConsole
+            consoleRef={consoleRef}
+            consoleTab={consoleTab}
+            setConsoleTab={setConsoleTab}
+            workflowRun={workflowRun}
+            liveLogs={liveLogs}
+            toggleStepExpand={toggleStepExpand}
+          />
+
+          {/* ============================================================== */}
+          {/* SECTION 6: Emergency Disaster Operations Room (Failover/Back) */}
           {/* ============================================================== */}
           <div>
             <div className="section-tag mb-3 flex items-center justify-between">
-              <span>Live Snowflake DR Operations (Executes Real DDL on AWS & Azure)</span>
+              <span>Live Snowflake DR Operations (Executes Real Cross-Cloud DDL)</span>
               <span className="text-[11px] text-slate-500 font-medium">
                 Streams live SQL & Query IDs into the GitHub Actions Console above
               </span>
@@ -1455,7 +796,7 @@ export default function App() {
                 <div>
                   <h3 className="text-sm font-black text-slate-900 flex items-center space-x-1.5 mb-2">
                     <ArrowRightLeft className="w-4 h-4 text-amber-500" />
-                    <span>Emergency Failover to Standby ({azSnap?.locator || status?.replica_cloud || 'Secondary'})</span>
+                    <span>Emergency Failover to Standby ({status?.is_configured ? (azSnap?.locator || '--') : '--'})</span>
                   </h3>
                   <p className="text-xs text-slate-600 mb-4">
                     Runs real <code className="font-mono">ALTER FAILOVER GROUP PRIMARY</code> + <code className="font-mono">ALTER CONNECTION PRIMARY</code> on Secondary account.
@@ -1475,7 +816,7 @@ export default function App() {
                 <div>
                   <h3 className="text-sm font-black text-slate-900 flex items-center space-x-1.5 mb-2">
                     <RotateCcw className="w-4 h-4 text-blue-500" />
-                    <span>Delta Catch-Up & Failback to Primary ({awsSnap?.locator || status?.primary_cloud || 'Primary'})</span>
+                    <span>Delta Catch-Up & Failback to Primary ({status?.is_configured ? (awsSnap?.locator || '--') : '--'})</span>
                   </h3>
                   <p className="text-xs text-slate-600 mb-4">
                     Refreshes reverse delta onto Primary account, restores Primary authority, and flips Anycast DNS back.
@@ -1491,161 +832,19 @@ export default function App() {
                 </button>
               </div>
             </div>
-
-            {/* Live Cryptographic HASH_AGG & WAN Transfer History */}
-            <div className="mt-4 enterprise-card p-4 bg-slate-50 flex flex-col sm:flex-row items-center justify-between gap-4">
-              <div>
-                <h4 className="text-xs font-black text-slate-900 flex items-center space-x-1.5">
-                  <Scale className="w-4 h-4 text-emerald-600" />
-                  <span>Live Full-Table HASH_AGG & Snowflake WAN Transfer History</span>
-                </h4>
-                <p className="text-[11px] text-slate-500">
-                  Executes real <code className="font-mono">SELECT COUNT(*), SUM(amount), HASH_AGG(...)</code> on both accounts + queries <code className="font-mono">REPLICATION_GROUP_REFRESH_HISTORY</code>.
-                </p>
-              </div>
-              <button
-                disabled={isWorkflowBusy || !status?.is_configured}
-                onClick={() => startLiveWorkflow('reconcile')}
-                className="px-4 py-2 bg-slate-900 hover:bg-slate-800 disabled:opacity-50 text-white rounded-lg text-xs font-bold transition shadow-2xs shrink-0 cursor-pointer"
-              >
-                Run Live HASH_AGG & WAN Audit
-              </button>
-            </div>
-
-            {reconcileResult && (
-              <div className="mt-3 enterprise-card p-4 bg-emerald-50/50 border-emerald-200 space-y-3">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span className="text-xs font-black text-emerald-800">✓ {reconcileResult.integrity_verdict}</span>
-                  <span className="text-xs text-emerald-700 font-bold font-mono">
-                    Row Delta = {reconcileResult.rpo_rows ?? 0} rows
-                  </span>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
-                  <div className="bg-white p-2.5 rounded border border-emerald-200">
-                    <span className="text-slate-400 font-bold block text-[10px]">AWS (AWC63551) Verified</span>
-                    <strong className="text-slate-900 text-sm tabular-nums">
-                      {reconcileResult.aws?.row_count?.toLocaleString()} rows (${reconcileResult.aws?.total_volume?.toLocaleString()})
-                    </strong>
-                    <div className="text-[10px] font-mono text-slate-400 truncate">sfqid: {reconcileResult.aws?.sfqid}</div>
-                  </div>
-                  <div className="bg-white p-2.5 rounded border border-emerald-200">
-                    <span className="text-slate-400 font-bold block text-[10px]">Azure (LQB72917) Verified</span>
-                    <strong className="text-slate-900 text-sm tabular-nums">
-                      {reconcileResult.azure?.row_count?.toLocaleString()} rows (${reconcileResult.azure?.total_volume?.toLocaleString()})
-                    </strong>
-                    <div className="text-[10px] font-mono text-slate-400 truncate">sfqid: {reconcileResult.azure?.sfqid}</div>
-                  </div>
-                  <div className="bg-white p-2.5 rounded border border-emerald-200">
-                    <span className="text-slate-400 font-bold block text-[10px]">Live 64-Bit HASH_AGG</span>
-                    <strong className="text-emerald-700 font-mono text-xs block">{reconcileResult.aws?.hash_agg}</strong>
-                    <div className="text-[10px] text-slate-500">
-                      Azure Hash: {reconcileResult.azure?.hash_agg}
-                    </div>
-                  </div>
-                </div>
-
-                {reconcileResult.refresh_history && reconcileResult.refresh_history.length > 0 && (
-                  <div className="bg-white rounded border border-slate-200 overflow-x-auto">
-                    <div className="px-3 py-1.5 bg-slate-50 border-b border-slate-200 text-[10px] font-black uppercase text-slate-600">
-                      Snowflake INFORMATION_SCHEMA.REPLICATION_GROUP_REFRESH_HISTORY (Live WAN Metadata)
-                    </div>
-                    <table className="w-full text-left text-[11px] font-mono">
-                      <thead>
-                        <tr className="border-b border-slate-100 text-slate-500">
-                          <th className="py-1.5 px-3">Phase</th>
-                          <th className="py-1.5 px-3">Bytes Transferred</th>
-                          <th className="py-1.5 px-3">Objects</th>
-                          <th className="py-1.5 px-3">Start Time</th>
-                          <th className="py-1.5 px-3">End Time</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {reconcileResult.refresh_history.map((h, i) => (
-                          <tr key={i}>
-                            <td className="py-1.5 px-3 font-bold text-slate-800">{h.phase}</td>
-                            <td className="py-1.5 px-3 text-blue-700">{(h.total_bytes || 0).toLocaleString()} B</td>
-                            <td className="py-1.5 px-3">{h.object_count}</td>
-                            <td className="py-1.5 px-3 text-slate-500">{h.start_time}</td>
-                            <td className="py-1.5 px-3 text-slate-500">{h.end_time}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-            )}
           </div>
 
           {/* ============================================================== */}
-          {/* SECTION 5: Live Multi-Cloud Object Inventory                   */}
+          {/* SECTION 7: Multi-Cloud Infrastructure & Object Ledger Table    */}
           {/* ============================================================== */}
-          <div>
-            <div className="section-tag mb-3 flex items-center justify-between">
-              <span>Live Snowflake Object & Endpoint Ledger</span>
-              <span className="text-[11px] text-slate-400 font-medium">{ledger.length} live objects</span>
-            </div>
-
-            <div className="enterprise-card overflow-hidden">
-              <div className="p-3 bg-slate-50/70 border-b border-slate-200 flex items-center justify-between gap-3">
-                <div className="relative w-full max-w-sm">
-                  <Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-slate-400" />
-                  <input
-                    type="text"
-                    placeholder="Filter live Snowflake objects..."
-                    value={tableSearch}
-                    onChange={(e) => setTableSearch(e.target.value)}
-                    className="w-full text-xs pl-8 pr-3 py-1.5 bg-white border border-slate-200 rounded-lg text-slate-700 focus:outline-none focus:border-blue-500"
-                  />
-                </div>
-              </div>
-
-              <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse">
-                  <thead>
-                    <tr className="bg-slate-50/50 border-b border-slate-200 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                      <th className="py-2.5 px-4">Snowflake Object</th>
-                      <th className="py-2.5 px-4">Cloud / Region</th>
-                      <th className="py-2.5 px-4">Target Identifier</th>
-                      <th className="py-2.5 px-4">Live Count / State</th>
-                      <th className="py-2.5 px-4">Current Authority</th>
-                      <th className="py-2.5 px-4">Last Query ID (sfqid)</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 text-xs">
-                    {filteredLedger.map((row) => (
-                      <tr key={row.id} className="hover:bg-slate-50/70 transition">
-                        <td className="py-3 px-4 font-bold text-slate-900 flex items-center space-x-2">
-                          <Database className="w-4 h-4 text-blue-600 shrink-0" />
-                          <span>{row.name}</span>
-                        </td>
-                        <td className="py-3 px-4">
-                          <span
-                            className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
-                              row.provider === 'AWS'
-                                ? 'bg-amber-50 text-amber-800 border-amber-200'
-                                : row.provider === 'Azure'
-                                ? 'bg-sky-50 text-sky-800 border-sky-200'
-                                : 'bg-purple-50 text-purple-800 border-purple-200'
-                            }`}
-                          >
-                            {row.provider} · {row.region}
-                          </span>
-                        </td>
-                        <td className="py-3 px-4 text-slate-600 font-mono text-[11px]">{row.target}</td>
-                        <td className="py-3 px-4 font-bold text-slate-800 tabular-nums">{row.volume}</td>
-                        <td className="py-3 px-4 font-semibold text-slate-700">{row.lifecycle}</td>
-                        <td className="py-3 px-4 font-mono text-[10px] text-slate-500">{row.sfqid || '--'}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
+          <ObjectLedgerTable
+            ledger={ledger}
+            tableSearch={tableSearch}
+            setTableSearch={setTableSearch}
+          />
 
           {/* ============================================================== */}
-          {/* SECTION 6: Session Execution Log (Only Real Executed Runs)     */}
+          {/* SECTION 8: Real Session Execution History Log                  */}
           {/* ============================================================== */}
           <div>
             <div className="section-tag mb-3 flex items-center justify-between">
@@ -1699,6 +898,7 @@ export default function App() {
         </div>
       </main>
 
+      {/* Account Onboarding Modal */}
       <OnboardingModal
         isOpen={showOnboarding}
         onClose={() => setShowOnboarding(false)}

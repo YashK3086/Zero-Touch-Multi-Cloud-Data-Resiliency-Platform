@@ -40,6 +40,8 @@ secrets.json
 schema.json
 scripts/account_history.txt
 data/
+reports/ui_connected.json
+reports/*.pdf
 
 # Media & Video screen recordings
 *.mp4

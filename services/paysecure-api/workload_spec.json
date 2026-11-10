@@ -1,0 +1,34 @@
+{
+  "name": "paysecure-api",
+  "version": "1.0.0",
+  "description": "PaySecure Core Transaction and Routing Microservice",
+  "image": "ghcr.io/yashk3086/paysecure-api:1.0.0",
+  "port": 8080,
+  "resources": {
+    "cpu": 0.25,
+    "memory": "0.5Gi"
+  },
+  "scale": {
+    "min_replicas_standby": 0,
+    "min_replicas_active": 1,
+    "max_replicas": 5
+  },
+  "health_probe": {
+    "path": "/health",
+    "port": 8080,
+    "initial_delay_seconds": 3,
+    "period_seconds": 5
+  },
+  "env": {
+    "PORT": "8080",
+    "APP_ENV": "production",
+    "SNOWFLAKE_REDIRECT_HOST": "nnfcdxy-sf_dr_global_redirect.snowflakecomputing.com",
+    "SNOWFLAKE_DATABASE": "SF_DR_DEMO_DB",
+    "SNOWFLAKE_SCHEMA": "DR_STAGING",
+    "SNOWFLAKE_WAREHOUSE": "DR_CONTROLLER_WH",
+    "AWS_STAGE_BUCKET": "sf-dr-primary-stage-bucket",
+    "AZURE_STAGE_CONTAINER": "sf-dr-secondary-stage",
+    "AZURE_STORAGE_ACCOUNT": "sfdrsecstagedrdemo"
+  }
+}
+

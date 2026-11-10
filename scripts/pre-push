@@ -1,9 +1,0 @@
-#!/bin/sh
-echo "======================================================================"
-echo "🚀 SaaS Git-Ops Hook: Multi-Cloud DR Infrastructure & Probes Active..."
-echo "🌐 Auto-launching Executive DR Control Plane (http://127.0.0.1:8080/)..."
-echo "======================================================================"
-
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "c:\CSPM_PROJECT\scripts\Git-Push-Start.ps1" -SkipGitPush &
-
-exit 0

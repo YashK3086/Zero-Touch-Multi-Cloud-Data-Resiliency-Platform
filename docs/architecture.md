@@ -1,102 +1,60 @@
-# Multi-Cloud Snowflake Disaster Recovery Architecture Blueprint
+# Cloud-Agnostic Multi-Cloud DR SaaS Platform — Architecture Blueprint
 
 ## Executive Overview
-This document outlines the architecture for an automated, zero-touch disaster recovery (DR) platform spanning two major cloud providers (**AWS** and **Azure**) using **Snowflake Failover Groups** and **Snowflake Client Redirect URLs**.
+This document outlines the architecture for the **Auto Fail-Over SaaS Platform**: an automated, cloud-agnostic disaster recovery and workload hydration control plane spanning **AWS**, **Azure**, and **GCP** using **Snowflake Failover Groups**, **Global Anycast Client Redirect**, and a **4-Part Deciding Engine** for container replica hydration.
 
 ---
 
-## 1. High-Level Architecture Diagram
+## 1. End-to-End Multi-Cloud SaaS Topology
 
 ```
-+-----------------------------------------------------------------------------------+
-|                               GLOBAL CLIENT ACCESS                                |
-|                                                                                   |
-|         Client Application / Query Traffic (e.g. BI Tools, ETL pipelines)          |
-|                                         |                                         |
-|                                         v                                         |
-|                 Snowflake Client Redirect Connection URL                          |
-|                     (sf_dr_global_redirect.snowflakecomputing.com)                |
-+-----------------------------------------------------------------------------------+
-                                          |
-                        +-----------------+-----------------+
-                        | (Active Route)                    | (Standby Route)
-                        v                                   v
-        +-------------------------------+   +-------------------------------+
-        |    AWS REGION (PRIMARY)       |   |   AZURE REGION (SECONDARY)    |
-        |  Account: SF_AWS_PRIMARY      |   |  Account: SF_AZURE_SECONDARY  |
-        |                               |   |                               |
-        |  +-------------------------+  |   |  +-------------------------+  |
-        |  | Primary Failover Group  |==== (Replication Stream) ===========>|
-        |  |  - DB: SF_DR_DEMO_DB    |  |   |  | Secondary Read Replica  |  |
-        |  |  - Users & RBAC Roles   |  |   |  |  - DB: SF_DR_DEMO_DB    |  |
-        |  |  - Warehouses (X-Small) |  |   |  |  - Users & RBAC Roles   |  |
-        |  +-------------------------+  |   |  +-------------------------+  |
-        |               ^               |   |               ^               |
-        |  +------------+------------+  |   |  +------------+------------+  |
-        |  | AWS S3 Stage (Free Tier)|  |   |  | Azure Blob Storage Stage|  |
-        |  +-------------------------+  |   |  +-------------------------+  |
-        +-------------------------------+   +-------------------------------+
-                        ^                                   ^
-                        |                                   |
-    +-------------------------------------------------------------------+
-    |                 PYTHON AUTOMATED HEALTH CONTROLLER                |
-    |                 (sf_dr_controller.py / Async Probes)              |
-    |                                                                   |
-    |  - Pings Primary Account every N seconds                          |
-    |  - Tracks failure threshold (3 consecutive failures)              |
-    |  - Triggers Zero-Touch Failover:                                  |
-    |    1. ALTER FAILOVER GROUP SF_DR_FAILOVER_GROUP PRIMARY           |
-    |    2. ALTER CONNECTION SF_DR_GLOBAL_REDIRECT PRIMARY              |
-    +-------------------------------------------------------------------+
++==================================================================================================+
+|                                    GLOBAL ANYCAST ROUTING LAYER                                  |
+|                 Snowflake Connection: sf_dr_global_redirect.snowflakecomputing.com               |
++==================================================================================================+
+                                    │                                  ▲
+                         (Normal Operations)                 (Disaster Promotion)
+                                    ▼                                  │
++───────────────────────────────────────────────+  +───────────────────────────────────────────────+
+|            PRIMARY CLOUD (e.g., AWS)          |  |          STANDBY CLOUD (e.g., AZURE)          |
+|                  (us-east-1)                  |  |                  (East US 2)                  |
++───────────────────────────────────────────────+  +───────────────────────────────────────────────+
+| 1. CUSTOMER WORKLOAD TIER (Terraform Demo):   |  | 1. TRANSLATED WORKLOAD TIER (Pilot-Light):    |
+|    - EC2 Instance: t3.micro (Active)          |  |    - Container App: paysecure-api-dr          |
+|    - Service: paysecure-api (Port 8080)       |  |    - Standby Replicas: 0 ($0.00/hr Idle Cost) |
+|    - Discovered dynamically via Cloud API     |  |    - Hydrated Replicas: 1 (On Failover <15s)  |
+|                                               |  |                                               |
+| 2. SNOWFLAKE PRIMARY DATA TIER (SaaS Built):  |  | 2. SNOWFLAKE STANDBY REPLICA TIER:            |
+|    - DB: SF_DR_DEMO_DB (READ-WRITE)           |  |    - DB: SF_DR_DEMO_DB (READ-ONLY REPLICA)    |
+|    - Stage: DR_STAGING.CLOUD_DR_STAGE         |  |    - Promoted to READ-WRITE on Failover       |
+|    - Table: FINANCIAL_TRANSACTIONS (6.36M)    |  |    - Failover Group: SF_DR_FAILOVER_GROUP     |
+|    - Failover Group: SF_DR_FAILOVER_GROUP     |  |      (AS REPLICA OF Primary)                  |
++───────────────────────────────────────────────+  +───────────────────────────────────────────────+
+                         ▲                                                 ▲
+                         └───────────────────────┬─────────────────────────┘
+                                                 │
+                       ┌─────────────────────────────────────────────────────┐
+                       │     SAAS CONTROL PLANE & 4-PART DECIDING ENGINE     │
+                       │     - Hosted UI (Vercel) + FastAPI Engine (Render)  │
+                       │     - 1. WorkloadCataloger (Discovery & Blueprints) │
+                       │     - 2. CrossCloudTranslator (AWS <-> Azure <-> GCP│
+                       │     - 3. WorkloadHydrator (0 -> 1 Pilot-Light Scale)│
+                       │     - 4. Bootstrap & 3-Strike Watchdog Sentry       │
+                       └─────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 2. Dynamic Failover Sequence Diagram
+## 2. Clear Separation of Responsibilities
 
-```mermaid
-sequenceDiagram
-    autonumber
-    participant Client as Client Application
-    participant Redirect as Client Redirect Connection
-    participant Primary as AWS Primary (Snowflake)
-    participant Secondary as Azure Secondary (Snowflake)
-    participant Controller as Python DR Health Controller
-
-    loop Replication Phase (Normal Operation)
-        Primary->>Secondary: Continuous Failover Group Async Replication (RPO ≈ 0)
-        Controller->>Primary: Local SQL Ping Health Check (Port 443)
-        Primary-->>Controller: 200 OK / Query Success
-        Client->>Redirect: Read/Write Queries
-        Redirect->>Primary: Route Traffic to AWS
-    end
-
-    note over Primary: Regional Outage / Network Partition Occurs
-
-    rect rgb(255, 230, 230)
-        Controller->>Primary: Health Check #1 -> TIMEOUT / FAIL
-        Controller->>Primary: Health Check #2 -> TIMEOUT / FAIL
-        Controller->>Primary: Health Check #3 -> TIMEOUT / FAIL
-    end
-
-    note over Controller: Threshold (3 Fails) Exceeded! Executing Zero-Touch Failover.
-
-    rect rgb(230, 255, 230)
-        Controller->>Secondary: ALTER FAILOVER GROUP SF_DR_FAILOVER_GROUP PRIMARY
-        Secondary-->>Controller: Failover Group Promoted to Primary
-        Controller->>Secondary: ALTER CONNECTION SF_DR_GLOBAL_REDIRECT PRIMARY
-        Secondary-->>Controller: Client Redirect Pointer Updated to Azure
-    end
-
-    note over Redirect: Failover Completed (RTO < 2 Mins, Redirection < 60s)
-
-    Client->>Redirect: Submits Next Query
-    Redirect->>Secondary: Route Traffic Seamlessly to Azure
-```
-
----
-
-## 3. SLA Metrics & Target Guarantees
-- **RTO (Recovery Time Objective)**: Target < 120 seconds.
-- **RPO (Recovery Point Objective)**: Target ≈ 0 (Replication interval set to lowest feasible schedule within Snowflake).
-- **DNS/Connection Switchover Time**: < 60 seconds (managed natively by Snowflake Global Client Redirect without external BGP or DNS TTL delay).
+1. **Customer Sample App (`terraform/`):**
+   - Deploys **only** the customer company's sample production microservice (`paysecure-api` on AWS EC2 `t3.micro` + VPC `10.0.0.0/16` + Security Group port `8080`).
+   - Zero DR storage or secondary cloud resources are created by Terraform.
+2. **SaaS 1-Click Onboarding (`OnboardingModal.jsx` ➔ `bootstrap.py`):**
+   - Customer links Primary & Secondary Snowflake accounts and Cloud Provider API credentials (ID + Secret).
+   - Engine auto-detects cloud providers/regions via Snowflake handshake (`CURRENT_REGION()`).
+   - Engine dynamically creates Snowflake Warehouses, Databases, Stages (`CLOUD_DR_STAGE`), seeds **6,362,620 PaySim rows**, and links the Cross-Cloud Failover Group + Anycast Redirect connection.
+   - `WorkloadCataloger` & `CrossCloudTranslator` discover the primary microservice and register a `$0` idle Pilot-Light replica (`0 replicas`) on the standby cloud.
+3. **Failover & Reverse Delta Catch-Up (`workflows.py`):**
+   - **Failover:** Syncs final delta, promotes Standby Snowflake to `PRIMARY (R/W)`, flips Anycast DNS, and hydrates Standby containers (`0 ➔ 1` replica).
+   - **Failback:** Runs **Reverse WAN Delta Catch-Up** (replicating any disaster transactions written on Standby back to Primary with `RPO = 0`), restores Primary authority, scales Standby containers back to `0`, and auto-generates the ISO/IEC 27001 PDF Audit Certificate in `reports/`.

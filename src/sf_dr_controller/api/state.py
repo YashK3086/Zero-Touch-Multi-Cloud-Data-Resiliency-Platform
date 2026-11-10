@@ -9,7 +9,6 @@ from __future__ import annotations
 import collections
 import json
 import logging
-import os
 import subprocess
 import threading
 import time
@@ -77,10 +76,17 @@ def _open_sf_connection(
     timeout: int = 20,
 ):
     """Opens a real Snowflake connection using RSA-2048 JWT or password auth."""
+    clean_account = account.identifier.strip().strip('"').strip("'")
+    if "://" in clean_account:
+        clean_account = clean_account.split("://", 1)[1]
+    if clean_account.lower().endswith(".snowflakecomputing.com"):
+        clean_account = clean_account[:-len(".snowflakecomputing.com")]
+    clean_account = clean_account.split("/")[0].strip()
+
     kwargs: dict[str, Any] = {
-        "account": account.identifier,
-        "user": account.user,
-        "role": account.role,
+        "account": clean_account,
+        "user": account.user.strip(),
+        "role": account.role.strip(),
         "login_timeout": timeout,
         "network_timeout": max(timeout * 3, 60),
         "socket_timeout": max(timeout * 3, 60),
@@ -91,20 +97,12 @@ def _open_sf_connection(
         kwargs["host"] = host_override
     if use_warehouse and account.warehouse:
         kwargs["warehouse"] = account.warehouse
-    if account.private_key_path and Path(account.private_key_path).exists():
-        import shutil
-        import stat
-        import tempfile
+    from ..bootstrap import _resolve_rsa_key_path
 
-        key_path = Path(account.private_key_path)
-        if os.name != "nt":
-            tmp_key = Path(tempfile.gettempdir()) / f"sf_key_{os.getuid() if hasattr(os, 'getuid') else 'app'}.p8"
-            if not tmp_key.exists():
-                shutil.copyfile(key_path, tmp_key)
-                os.chmod(tmp_key, stat.S_IRUSR)
-            key_path = tmp_key
+    resolved_key = _resolve_rsa_key_path(account.private_key_path)
+    if resolved_key:
         kwargs["authenticator"] = "SNOWFLAKE_JWT"
-        kwargs["private_key_file"] = str(key_path)
+        kwargs["private_key_file"] = str(resolved_key)
     elif account.password:
         kwargs["password"] = account.password
     else:
@@ -147,6 +145,7 @@ class LiveSnowflakeState:
         self.active_workflow: str | None = None
         self.run_counter: int = 0
         self.started_at_ts: float = time.time()
+        self.ui_connected: bool = False
 
         # Autonomous 3-Strike Watchdog Sentry & Outage Injection State
         self.watchdog_enabled: bool = True
@@ -158,60 +157,64 @@ class LiveSnowflakeState:
         self.manual_override: bool = False  # When True, Watchdog never reverses manual failover
         self.last_git_push_event: dict[str, Any] | None = None
 
-        # Live Snapshots (Polled continuously from Snowflake)
+        # Live Snapshots (Polled continuously from Snowflake once connected)
         self.aws: dict[str, Any] = {
-            "label": "AWS us-east-1",
+            "label": "--",
             "provider": "AWS",
-            "identifier": "NNFCDXY-SF_AWS_PRIMARY",
-            "account_name": "SF_AWS_PRIMARY",
-            "locator": "AWC63551",
-            "region": "AWS_US_EAST_1",
-            "healthy": True,
-            "ping_ms": 320.0,
-            "fg_is_primary": True,
-            "conn_is_primary": True,
-            "connection_url": "",
-            "secondary_state": None,
-            "replication_schedule": "10 MINUTE",
-            "next_scheduled_refresh": None,
-            "row_count": None,
-            "used_credits": 0.05,
-            "credit_quota": 10.0,
-            "last_sfqid": None,
-            "error": None,
-        }
-        self.azure: dict[str, Any] = {
-            "label": "Azure East US 2",
-            "provider": "Azure",
-            "identifier": "NNFCDXY-SF_AZURE_DR",
-            "account_name": "SF_AZURE_DR",
-            "locator": "LQB72917",
-            "region": "AZURE_EASTUS2",
-            "healthy": True,
-            "ping_ms": 280.0,
+            "identifier": "--",
+            "account_name": "--",
+            "locator": "--",
+            "region": "--",
+            "healthy": False,
+            "ping_ms": None,
             "fg_is_primary": False,
             "conn_is_primary": False,
-            "connection_url": "",
-            "secondary_state": "STARTED",
-            "replication_schedule": "10 MINUTE",
+            "connection_url": "--",
+            "secondary_state": None,
+            "replication_schedule": "--",
             "next_scheduled_refresh": None,
             "row_count": None,
-            "used_credits": 0.02,
-            "credit_quota": 10.0,
+            "used_credits": None,
+            "credit_quota": None,
             "last_sfqid": None,
-            "error": None,
+            "error": "No connections established yet",
+        }
+        self.azure: dict[str, Any] = {
+            "label": "--",
+            "provider": "Azure",
+            "identifier": "--",
+            "account_name": "--",
+            "locator": "--",
+            "region": "--",
+            "healthy": False,
+            "ping_ms": None,
+            "fg_is_primary": False,
+            "conn_is_primary": False,
+            "connection_url": "--",
+            "secondary_state": None,
+            "replication_schedule": "--",
+            "next_scheduled_refresh": None,
+            "row_count": None,
+            "used_credits": None,
+            "credit_quota": None,
+            "last_sfqid": None,
+            "error": "No connections established yet",
         }
         self.anycast: dict[str, Any] = {
-            "url": "nnfcdxy-sf_dr_global_redirect.snowflakecomputing.com",
-            "landed_locator": "AWC63551",
-            "landed_region": "AWS_US_EAST_1",
-            "landed_cloud": "AWS us-east-1",
-            "latency_ms": 340.0,
-            "sfqid": "",
-            "checked_at": None,
+            "url": "--",
+            "landed_locator": "--",
+            "landed_region": "--",
+            "landed_cloud": "--",
+            "latency_ms": None,
+            "sfqid": "--",
+            "checked_at": "--",
         }
 
         # Operation History & Real-Time Log Ring Buffer
+        self.last_discovery: dict[str, Any] = {}
+        self._syncing_wan_delta: bool = False
+        self._last_ec2_count: int = 0
+        self._last_s3_count: int = 0
         self.last_rto_seconds: float | None = None
         self.last_reconcile: dict[str, Any] | None = None
         self.last_refresh_history: list[dict[str, Any]] = []
@@ -221,11 +224,11 @@ class LiveSnowflakeState:
         self.telemetry_points: collections.deque[dict[str, Any]] = collections.deque(maxlen=30)
 
         # Uptime Counter Accumulators
-        self.aws_success_probes: int = 1
+        self.aws_success_probes: int = 0
         self.aws_failed_probes: int = 0
-        self.azure_success_probes: int = 1
+        self.azure_success_probes: int = 0
         self.azure_failed_probes: int = 0
-        self.anycast_success_probes: int = 1
+        self.anycast_success_probes: int = 0
 
         self._load_persisted_history()
 
@@ -239,73 +242,6 @@ class LiveSnowflakeState:
         except Exception as e:
             logger.warning("Could not read drill_history.json: %s", e)
 
-        if not self.drill_history:
-            now_utc = datetime.now(timezone.utc)
-            d_str = now_utc.strftime("%Y-%m-%d")
-            self.drill_history = [
-                {
-                    "id": "RUN-005",
-                    "timestamp": f"{d_str} 18:24:12",
-                    "operation": "Manual Emergency Failover",
-                    "route": "AWS (AWC63551) ➔ Azure (LQB72917)",
-                    "duration": "1.17s RTO (14.2s total)",
-                    "rows": "6,362,620 rows active on Azure",
-                    "rpo": "0 rows",
-                    "operator": "Enterprise Operator",
-                    "audit": "Verified",
-                    "status": "PASS (RPO=0)",
-                },
-                {
-                    "id": "RUN-004",
-                    "timestamp": f"{d_str} 17:10:45",
-                    "operation": "Zero-Data-Drift Cryptographic Reconciliation",
-                    "route": "AWS ⟷ Azure",
-                    "duration": "2.10s total",
-                    "rows": "6,362,620 rows audited",
-                    "rpo": "0 rows",
-                    "operator": "Autonomous Auditor",
-                    "audit": "Verified",
-                    "status": "100% WAN Parity",
-                },
-                {
-                    "id": "RUN-003",
-                    "timestamp": f"{d_str} 15:45:30",
-                    "operation": "3-Strike Watchdog Outage Drill",
-                    "route": "AWS (AWC63551) ➔ Azure (LQB72917)",
-                    "duration": "1.24s RTO (15.1s total)",
-                    "rows": "6,362,620 rows active on Azure",
-                    "rpo": "0 rows",
-                    "operator": "Watchdog Sentry",
-                    "audit": "Verified",
-                    "status": "PASS (RPO=0)",
-                },
-                {
-                    "id": "RUN-002",
-                    "timestamp": f"{d_str} 14:15:18",
-                    "operation": "Delta Catch-Up & Failback",
-                    "route": "Azure (LQB72917) ➔ AWS (AWC63551)",
-                    "duration": "1.45s RTO (16.8s total)",
-                    "rows": "6,362,620 rows active on AWS",
-                    "rpo": "0 rows",
-                    "operator": "Enterprise Operator",
-                    "audit": "Verified",
-                    "status": "AWS PRIMARY",
-                },
-                {
-                    "id": "RUN-001",
-                    "timestamp": f"{d_str} 12:00:00",
-                    "operation": "Continuous WAN Replication & PaySim Ingestion",
-                    "route": "AWS (AWC63551) ➔ Azure (LQB72917)",
-                    "duration": "18.2s total (5,494 rows/s)",
-                    "rows": "6,362,620 rows",
-                    "rpo": "0 rows",
-                    "operator": "Snowpipe Ingestion Pipeline",
-                    "audit": "Verified",
-                    "status": "In Sync",
-                },
-            ]
-            self._save_drill_history()
-
         try:
             if LAST_RUN_FILE.exists():
                 run_data = json.loads(LAST_RUN_FILE.read_text(encoding="utf-8"))
@@ -314,35 +250,14 @@ class LiveSnowflakeState:
         except Exception as e:
             logger.warning("Could not read last_workflow_run.json: %s", e)
 
-        if not self.last_workflow_run and self.drill_history:
-            latest = self.drill_history[0]
-            self.last_workflow_run = {
-                "runId": latest.get("id", "RUN-005"),
-                "workflow": latest.get("operation", "Disaster Recovery Drill"),
-                "title": f"{latest.get('operation')} ({latest.get('route')})",
-                "state": "success",
-                "elapsedS": 14.2,
-                "activeStepIdx": -1,
-                "summary": f"{latest.get('status')}: {latest.get('duration')} · {latest.get('rows')} ({latest.get('operator')})",
-                "steps": [
-                    {
-                        "title": f"{latest.get('operation')} · Route: {latest.get('route')}",
-                        "status": "done",
-                        "duration_s": 14.2,
-                        "logs": [
-                            {
-                                "ts": latest.get("timestamp"),
-                                "account": "AUDIT",
-                                "message": f"Verified execution: {latest.get('operation')} ➔ {latest.get('status')}",
-                                "level": "SUCCESS",
-                            }
-                        ],
-                        "expanded": False,
-                    }
-                ],
-                "error": None,
-            }
-            self._save_last_workflow_run()
+        try:
+            conn_file = REPORTS_DIR / "ui_connected.json"
+            if conn_file.exists():
+                cdata = json.loads(conn_file.read_text(encoding="utf-8"))
+                if isinstance(cdata, dict) and cdata.get("connected") is True:
+                    self.ui_connected = True
+        except Exception:
+            pass
 
     def _save_drill_history(self) -> None:
         try:
@@ -365,6 +280,12 @@ class LiveSnowflakeState:
             if len(self.drill_history) > 100:
                 self.drill_history = self.drill_history[:100]
             self._save_drill_history()
+        try:
+            from .reports import build_and_save_audit_pdf
+
+            build_and_save_audit_pdf()
+        except Exception as e:
+            logger.debug("Could not auto-save PDF after drill: %s", e)
 
     def record_workflow_completion(self, run_state: dict[str, Any]) -> None:
         with self._lock:
@@ -614,7 +535,95 @@ class LiveSnowflakeState:
             logger.warning("Anycast probe note: %s", exc)
             return self.anycast
 
+    def _sync_live_cloud_inventory(self, settings: Settings) -> None:
+        """Continuously polls live AWS/Azure cloud APIs for Compute & Storage stats and auto-replicates row deltas."""
+        try:
+            from ..discovery import discover_aws, discover_azure
+
+            aws_disc = discover_aws()
+            with self._lock:
+                if not isinstance(self.last_discovery, dict):
+                    self.last_discovery = {}
+                self.last_discovery["aws"] = aws_disc
+                if not self.last_discovery.get("azure") or (self.probe_count % 3 == 0):
+                    try:
+                        self.last_discovery["azure"] = discover_azure()
+                    except Exception:
+                        pass
+
+            running_insts = [i for i in (aws_disc.get("instances") or []) if i.get("state") in ("running", "pending")]
+            buckets = aws_disc.get("buckets") or []
+            ec2_cnt = len(running_insts)
+            s3_cnt = len(buckets)
+
+            if ec2_cnt != self._last_ec2_count or (s3_cnt != self._last_s3_count and self._last_s3_count > 0):
+                self._last_ec2_count = ec2_cnt
+                self._last_s3_count = s3_cnt
+                inst_summary = ", ".join(f"{i.get('instance_id')} ({i.get('type')})" for i in running_insts) or "0 instances"
+                self.add_log(
+                    source="discovery",
+                    account="AWS_PRIMARY",
+                    message=f"🔍 Live Cloud Probe detected resource change: {ec2_cnt} Running EC2 [{inst_summary}], {s3_cnt} S3 Buckets",
+                    level="SUCCESS" if ec2_cnt > 0 else "INFO",
+                )
+            else:
+                self._last_s3_count = s3_cnt
+
+            aws_rows = self.aws.get("row_count")
+            az_rows = self.azure.get("row_count")
+
+            # Whenever live Primary rows differ from Secondary rows (e.g. external app ingested data via S3/Snowpipe),
+            # automatically trigger WAN Failover Group refresh so Azure Secondary catches up to RPO = 0.
+            if (
+                aws_rows is not None
+                and az_rows is not None
+                and aws_rows != az_rows
+                and not self._syncing_wan_delta
+                and self.aws.get("fg_is_primary") is True
+            ):
+                self._syncing_wan_delta = True
+
+                def _wan_delta_sync_worker() -> None:
+                    try:
+                        delta_diff = abs(int(aws_rows) - int(az_rows))
+                        self.add_log(
+                            source="replication",
+                            account="AZURE_DR",
+                            message=f"⚡ Live Delta Detected ({delta_diff:,} rows difference: Primary={aws_rows:,}, Secondary={az_rows:,}). Triggering WAN Failover Group Refresh...",
+                            level="INFO",
+                        )
+                        conn_s = _open_sf_connection(settings.secondary, use_warehouse=True, timeout=30)
+                        try:
+                            cur_s = conn_s.cursor()
+                            try:
+                                cur_s.execute(
+                                    f"ALTER FAILOVER GROUP {settings.snowflake_failover_group_name} REFRESH"
+                                )
+                            finally:
+                                cur_s.close()
+                        finally:
+                            conn_s.close()
+
+                        with self._lock:
+                            self.azure["row_count"] = aws_rows
+                        self.add_log(
+                            source="replication",
+                            account="AZURE_DR",
+                            message=f"🛡️ WAN Delta Replicated: Secondary synchronized to {aws_rows:,} rows (RPO = 0).",
+                            level="SUCCESS",
+                        )
+                    except Exception as exc:
+                        logger.debug("WAN delta auto-sync note: %s", exc)
+                    finally:
+                        self._syncing_wan_delta = False
+
+                threading.Thread(target=_wan_delta_sync_worker, name="wan-delta-auto-sync", daemon=True).start()
+        except Exception as exc:
+            logger.debug("Live cloud inventory sync note: %s", exc)
+
     def run_probe_cycle(self, *, include_anycast: bool = False) -> None:
+        if not self.ui_connected:
+            return
         try:
             settings = Settings()
         except Exception as exc:
@@ -731,6 +740,8 @@ class LiveSnowflakeState:
                     "azure_rows": az_rows or 0,
                 }
             )
+
+        self._sync_live_cloud_inventory(settings)
 
         if should_trigger_auto_failover:
             self.add_log(

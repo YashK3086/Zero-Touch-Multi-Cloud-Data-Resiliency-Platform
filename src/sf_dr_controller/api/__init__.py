@@ -31,6 +31,7 @@ from .telemetry import get_system_status
 from .telemetry import router as telemetry_router
 from .webhooks import router as webhooks_router
 from .workflows import router as workflows_router
+from .workloads import router as workloads_router
 
 logger = logging.getLogger("sf_dr_controller.api")
 
@@ -70,6 +71,7 @@ async def disable_browser_cache(request: Request, call_next):
 # Include domain routers
 app.include_router(telemetry_router)
 app.include_router(workflows_router)
+app.include_router(workloads_router)
 app.include_router(actions_router)
 app.include_router(onboarding_router)
 app.include_router(reports_router)
@@ -82,6 +84,10 @@ if DIST_DIR.exists():
 
     @app.get("/{full_path:path}")
     def serve_frontend(full_path: str):
+        if full_path.startswith("api/"):
+            from fastapi import HTTPException
+
+            raise HTTPException(status_code=404, detail=f"API endpoint /{full_path} not found")
         target = DIST_DIR / full_path
         if target.exists() and target.is_file():
             return FileResponse(target)

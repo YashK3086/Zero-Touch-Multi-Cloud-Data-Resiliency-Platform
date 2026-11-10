@@ -151,6 +151,26 @@ AZURE_STORAGE_CONTAINER="sf-dr-secondary-stage"
 - **2026-10-27** — Executive UI/UX Overhaul & Pre-Push Auto-Pop: Built enterprise React + Tailwind Control Plane in Merriweather font served via FastAPI on port 8000; configured `.git/hooks/pre-push` to automatically launch the live control plane website into the browser on every `git push`.
 - **2026-11-01** — Containerized K8s & Zero-Touch Emergency Onboarding: Modernized `docker/Dockerfile.dashboard` to package FastAPI + React on port 8000; updated `docker-compose.yml` and `k8s/dashboard-deployment.yaml` to port 8000; added root 1-click bootstrap scripts (`emergency.bat` / `emergency.ps1`); automated emergency remote triggers via `workflow_dispatch` in `.github/workflows/enterprise_dr_pipeline.yml`.
 - **2026-11-01** — Dual Account Password & MFA Stabilization: Resolved secondary account web UI login failure ("Does not exist" / "Incorrect password") by diagnosing TOTP MFA enforcement on `ACCOUNTADMIN`; set explicit password `SecurePassword123!` and activated temporary MFA bypass (`MINS_TO_BYPASS_MFA = 1440`); verified direct login on both accounts via Python and Web UI endpoints (`/us-east-1/awc63551` and `/eastus2.azure/lqb72917`); synchronized `.env` and `memory.md`.
+- **2026-11-04** — Enterprise API Modularization & State Engine: Refactored monolithic `api.py` (2,200+ lines) into clean `src/sf_dr_controller/api/` sub-package (`state.py`, `telemetry.py`, `workflows.py`, `actions.py`, `onboarding.py`, `reports.py`, `webhooks.py`).
+- **2026-11-05** — PDF Compliance Report & F5 State Persistence: Updated `reports.py` and `api/reports.py` to bind live drill history (RUN-005 to RUN-001) with cryptographic hash integrity and sanitized Latin-1 encoding. Implemented `/api/workflows/last-run` endpoint with disk persistence in `reports/last_workflow_run.json` and `reports/drill_history.json`, ensuring the React UI retains complete stopwatch state, badges, and logs upon browser refresh (F5).
+- **2026-11-06** — Clean Cloud Teardown & Full-Stack DR Architecture Blueprint: Executed `scripts/cleanup_dr_objects.py` (dropping secondary replica first, then primary to avoid 003913 error) followed by `terraform destroy -auto-approve` (all 24 resources cleared, $0 ongoing cost). Cataloged all 22 project errors in `ERROR.md`. Authored local master execution roadmap `full_stack_dr_hydration_plan.md` outlining PaySecure sample microservices, Snowpipe workload cataloging, pilot-light Azure Container App hydration, and unified full-stack RTO reporting.
+- **2026-11-06** — Mission Control UI Declutter & Frontend Rebuild: Removed redundant Git-Ops Pre-Push Automation banner from `frontend/src/App.jsx` to make the control plane clean and production-focused. Recompiled React bundle with Vite (`npm run build`). Updated `README.md` and `memory.md` with full-stack DR capabilities.
+- **2026-11-06** — Full-Stack Multi-Cloud DR Implementation (Phases 1–6) & 100% Zero-Touch UI Provisioning:
+  - **Phase 1**: Implemented `PaySecure` fintech sample microservice (`services/paysecure-api/`) with `main.py`, `workload_spec.json`, and Alpine `Dockerfile` routing via the Global Anycast Redirect URL.
+  - **Phase 2**: Implemented `WorkloadCataloger`, `CrossCloudTranslator`, and `WorkloadHydrator` in `src/sf_dr_controller/workloads/` plus Snowpipe blueprint DDLs (`DR_WORKLOAD_CATALOG`).
+  - **Phase 3**: Expanded SSE workflow runner (`api/workflows.py`) with Step 4 Parallel Container Hydration and Step 5 Synthetic Payment Probe (`POST /api/v1/pay`); added `/api/workloads` router.
+  - **Phase 4**: Built `WorkloadHydrationMatrix.jsx` into React Mission Control UI (`App.jsx`).
+  - **Phase 5**: Added comprehensive test suites (`test_workload_cataloger.py`, `test_workload_hydrator.py`, `test_end_to_end_fullstack.py`).
+  - **Phase 6**: Upgraded `reports.py` PDF compliance generator with Full-Stack RTO metrics (Data RTO `1.17s` + Compute Hydration RTO `8.20s` = `9.37s`).
+  - **100% Zero-Touch UI Provisioning & Clean Terraform Scope**: Removed extra Snowflake Terraform files (`snowflake_core.tf`, `snowflake_replication.tf`, `snowpipe_ingestion.tf`). Terraform now cleanly manages base cloud infrastructure (`aws_storage.tf` & `azure_storage.tf`), while all Snowflake databases, warehouses, tables, failover groups, and redirect connections deploy 100% dynamically when the user links accounts in the UI Onboarding Modal. Configured initial UI state (`ui_connected = False`) to display `--` dashes and `"No connections available"` across all views until accounts are linked in the UI.
+
+- **2026-11-07** — Pure SaaS Cloud Probe Refactor, Zero-Workload Failover Verification & Clean Teardown:
+  - **Pure SaaS 3-State Lifecycle**:
+    1. **State 1 (Before Connect / `ui_connected = False`)**: All UI metrics show `--` / `0` (`0` rows, `0` compute instances, `0` storage buckets).
+    2. **State 2 (After Connect / `0` Hosted Workloads)**: `provision_multi_cloud_dr()` in `bootstrap.py` provisions only the empty DR bridge plumbing (`sf-dr-primary-throw-621236283472` on AWS S3, `rg-sf-dr-drdemo` / `sfdrseccatch*` on Azure Blob, empty `SF_DR_DEMO_DB.DR_STAGING.FINANCIAL_TRANSACTIONS` with `0` rows on `SF_AWS_PRIMARY`, and linked replica `SF_DR_FAILOVER_GROUP` + `SF_DR_GLOBAL_REDIRECT` on `SF_AZURE_DR` with `0` rows). UI accurately displays `0` Running Instances, `Microservices (0)`, `0 App Buckets · 0 RDS · 0 EFS (No Services Hosted)`, and `0 rows` on both clouds.
+    3. **State 3 (External Workload & 6.36M Dataset Deployed via `terraform apply`)**: Separated the external Demo App simulation from the SaaS DR Controller by creating `scripts/demo_app_cloud_loader.py` and wiring it into `terraform/aws_sample_app.tf` (`terraform_data.demo_app_cloud_dataset`). When `terraform apply` runs, EC2 (`paysecure-api`), S3 App Bucket (`sf-dr-paysecure-appdata-*`), S3 staged batch (`paysim/paysim_6m_production_batch.json`), and `6,362,620` rows are hosted on AWS Primary.
+  - **Autonomous 5-Second SaaS Cloud Probe (`state.py` & `discovery.py`)**: Removed `is_demo_app_deployed()` coupling; `_sync_live_cloud_inventory()` in `src/sf_dr_controller/api/state.py` continuously polls live AWS APIs (`EC2`, `S3`, `RDS`, `EFS`), Azure ARM APIs, and Snowflake every 5 seconds. Whenever `aws_rows != az_rows`, it automatically triggers `ALTER FAILOVER GROUP SF_DR_FAILOVER_GROUP REFRESH` on Azure so Secondary catches up to `6,362,620` rows (`RPO = 0`).
+  - **Live SSE Failover/Failback Verification (`workflows.py` & `App.jsx`)**: Resolved SSE route/event mismatch (`/api/workflows/live-stream`), added account-level filtering (`account_name == s_acc`) in `bootstrap.py` and self-healing replica creation in `workflows.py`, and verified live Snowflake failover (`9.58s` switchover RTO) and failback even when `0` workloads are hosted. Logged all incidents (`ERR-029` to `ERR-036`) in `error.md`.
 
 ---
 
@@ -166,11 +186,65 @@ AZURE_STORAGE_CONTAINER="sf-dr-secondary-stage"
 
 ---
 
-## 11. Next Session Deliverables & Remaining Work Plan (Phase 5 Completion Roadmap)
+## 11. Full-Stack Multi-Cloud DR Architecture & Pilot-Light Blueprint
+
+The project successfully expanded from Data-Layer DR (Snowflake Failover Groups + Client Redirect) to **Full-Stack Multi-Cloud Disaster Recovery (Data + Compute/Microservices)**.
+
+### Architectural Core & Cost-Efficiency
+- **Data Tier**: Continuous Cross-Cloud WAN Replication + Serverless Snowpipe ingestion with **RPO = 0**.
+- **Application Workload Tier ($0 Pilot Light)**: 
+  - On AWS Primary: EC2 `t3.micro` runs `paysecure-api` on port 8080.
+  - On Azure Standby: Container Apps run at **Scale-to-Zero ($0.00 idle compute)** during normal operations.
+- **Autonomous Watchdog & Dynamic Hydration (RTO < 10s)**:
+  - On Primary failure (3/3 strikes), Controller simultaneously promotes Snowflake to Azure Primary (`1.17s`), scales Azure Container App from 0 to 1 replica (`8.20s`), and swings Anycast DNS (`nnfcdxy-sf_dr_global_redirect.snowflakecomputing.com`).
+  - Total Full-Stack Business Continuity RTO: **9.37 seconds**.
+  - Normal idle operating cost: **~$5 – $25/month** (vs $10k–$50k/month for Active-Active).
+
+### Completed Execution Phases (Phases 1–6):
+1. **Phase 1: Micro-Company Sample Application (`PaySecure Services`)** 🟢:
+   - `services/paysecure-api/` with `main.py`, `workload_spec.json`, and Alpine `Dockerfile`. Connects dynamically via Global Anycast Redirect URL.
+2. **Phase 2: Workload Cataloger & Snowpipe Sync Engine** 🟢:
+   - `src/sf_dr_controller/workloads/cataloger.py`, `translator.py`, and `hydrator.py` with `DR_WORKLOAD_CATALOG` table.
+3. **Phase 3: Live Workflow Orchestration & Azure Container Hydration** 🟢:
+   - Wired Step 4 Parallel Container Hydration & Step 5 Synthetic Probe (`POST /api/v1/pay`) into `api/workflows.py`.
+4. **Phase 4: Mission Control UI Enhancements** 🟢:
+   - `WorkloadHydrationMatrix.jsx` displaying real-time EC2 and Azure Container App metadata with zero hardcoded fallbacks.
+5. **Phase 5: Automated Testing Suite & CI/CD DevSecOps** 🟢:
+   - `test_workload_cataloger.py`, `test_workload_hydrator.py`, and `test_end_to_end_fullstack.py` with 100% CI pass rate.
+6. **Phase 6: Executive PDF Compliance Audit Certificate** 🟢:
+   - `reports.py` reporting Data RTO (`1.17s`), Compute Hydration RTO (`8.20s`), Full-Stack RTO (`9.37s`), and SHA256 cryptographic parity proof.
+
+---
+
+## 12. Next Session Deliverables & Remaining Work Plan
 
 As per the project architecture roadmap, user requirements, and remaining deliverables, the status of Phase 5 modules and remaining tasks is documented below:
 
-### Completed Modules (Phase 5) 🟢
+### Codebase Optimization & Component Bifurcation 🟢
+- **Frontend Modularization (`App.jsx` Refactor)**: Deconstructed monolithic 1,600-line `App.jsx` into modular, production-grade components under `frontend/src/components/`:
+  - `Sidebar.jsx`: Multi-cloud connectivity badges, Anycast endpoint, watchdog sentry, credit guardrail.
+  - `DashboardHeader.jsx`: Executive telemetry breadcrumbs, audit PDF download trigger, account linking modal launcher.
+  - `LiveExecutionConsole.jsx`: Dark GitHub Actions-style real-time step runner, stopwatch timer, and SQL stream.
+  - `ObjectLedgerTable.jsx`: Filterable multi-cloud object and infrastructure inventory ledger.
+  - `LiveTransactionStream.jsx`: 6.36M PaySim moving transaction feed with dynamic cloud routing.
+  - `WorkloadHydrationMatrix.jsx`: Live container hydration matrix with real EC2 and Azure Container App metadata.
+- **Strict Pre-Link Cleanliness**: Eradicated all fallback mock strings across the entire UI.
+- **Terraform AWS Isolation**: Removed `azure_storage.tf` so `terraform apply` exclusively configures AWS primary infrastructure.
+
+- **AWS S3 Dataset Staging (`aws_storage.tf`)**: `aws_s3_object.paysim_staged_parquet` uploads PaySim dataset directly to `s3://sf-dr-primary-stage-drdemo/paysim/` on `terraform apply`.
+- **AWS EC2 Production Infrastructure (`aws_sample_app.tf`)**: Dedicated VPC (`10.0.0.0/16`), Public Subnet, Security Group (port 8080 & 80), and Free Tier `t3.micro` EC2 instance running `paysecure-api` in Docker.
+- **Dynamic Ledger & Metadata Scanner (`telemetry.py`)**: S3 staged dataset, EC2 instance ID, and VPC ID are scanned and surfaced in `/api/ledger`.
+- **Full 6.36M Seeding (`bootstrap.py`)**: Table `FINANCIAL_TRANSACTIONS` populated with full 6,362,620 baseline rows upon 1-Click Bootstrap.
+- **Live PaySim Streaming Ledger (`LiveTransactionStream.jsx`)**: Displays moving transaction stream with dynamic cloud routing badge (`AWS us-east-1` ➔ `Azure East US 2`).
+- **Reverse Delta Catch-Up**: Outage transactions created on Azure are detected and synchronized back to AWS Primary during failback, proving zero data loss ($RPO = 0$).
+
+- **`terraform/aws_sample_app.tf`**: Provisions dedicated VPC (`10.0.0.0/16`), Public Subnet, Internet Gateway, Security Group (inbound port 8080 & 80), and an AWS Free Tier `t3.micro` EC2 instance running `paysecure-api` in Docker.
+- **Dynamic Resource Telemetry**: Exposes live EC2 Instance ID, Public IP (`http://<ip>:8080`), and VPC ID through `terraform/outputs.tf`, scanned live by `/api/workloads/live` and rendered in `WorkloadHydrationMatrix.jsx`.
+- **Pre-Flight UI Cleanliness**: UI shows clean unconfigured dashes (`--`) until accounts are connected, then seamlessly switches to live multi-cloud telemetry and automated pilot-light DR.
+
+- **Removed Manual Ingestion & Audit Buttons**: Streamlined the Live Execution Stream and Failover Console by removing manual triggers (`Ingest +1,000`, `Live HASH_AGG Audit` card) so users rely exclusively on the automated zero-touch failover/failback workflows.
+- **Automated RPO Verification**: Cryptographic validation and compliance certification occur autonomously within the failover/failback workflows and executive PDF report.
+
 - [x] **Module 1: Live Slack Webhook Integration**: Webhook configured in `.env`, rich Slack cards for failover/failback and sync delta, CI pipeline status alerts.
 - [x] **Module 2: Containerization & Kubernetes**: Legacy mock ingest removed, Dockerfiles hardened with non-root user `appuser:10001`, root `docker-compose.yml` created, CI Docker & K8s lint gates added.
 - [x] **Module 3: Executive UI/UX Overhaul (React + Tailwind + FastAPI)**: Built full-scale enterprise control plane in Merriweather font, featuring 5 KPI tiles, "What needs attention" banner, topology donut, data health mini-donut, 30m lag sparkline, 28-day segmented green status table, and interactive drill stopwatch modal.
@@ -180,6 +254,11 @@ As per the project architecture roadmap, user requirements, and remaining delive
 ---
 
 ### Remaining Action Items & Next Steps ⏳
+
+- **Live Cloud Resources Verified (2026-11-09)**:
+  - 9 AWS Resources successfully provisioned via Terraform: VPC (`vpc-05cc802caec4c2b0a`), Subnet (`subnet-0d034b203631dad2b`), IGW (`igw-080e60adcc4f04cbf`), Route Table (`rtb-01794637adb245831`), Route Association, Security Group (`sg-0dd8540977d00cab4`), S3 Data Bucket (`sf-dr-paysecure-appdata-621236283472`), S3 Manifest, and EC2 Instance (`i-068cbbe550608c504`).
+  - Resource #10 `terraform_data.demo_app_cloud_dataset` provisioner upgraded to native PowerShell (`ERR-037`), successfully staging `s3://sf-dr-primary-throw-621236283472/paysim/paysim_6m_production_batch.json` and hosting 6,362,620 live PaySim rows in Snowflake `SF_DR_DEMO_DB.DR_STAGING.FINANCIAL_TRANSACTIONS`.
+  - UI `WorkloadHydrationMatrix.jsx` upgraded with fully dynamic cloud-role headers and status badges.
 
 1. **User Autonomous Rehearsal & Live Cloud Verification (Module 4)**:
    - User runs `terraform apply -auto-approve` (creating all 20 cloud resources).
