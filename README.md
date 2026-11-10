@@ -27,10 +27,10 @@ This platform implements a **true Pilot-Light architecture**:
 
 | Metric | Target SLA | Benchmark Result | Method / Validation |
 | :--- | :--- | :--- | :--- |
-| **Data Failover RTO** | `< 60s` | **1.16s - 3.90s** | Snowflake Client Redirect Anycast switch |
-| **Compute Hydration RTO** | `< 120s` | **~15s** | Azure Container Instance (ACI) scale `0 ➔ 1` |
-| **RPO (Data Loss)** | `0 rows` | **0.00 rows ($RPO = 0$)** | WAN Replication + PaySim Hash Parity |
-| **Standby Idle Cost** | Minimum | **$0.00 / month** | Scale-to-zero serverless container pilot-light |
+| **Data Failover RTO** | `< 90s` | **1.16s - 3.90s** | Snowflake Client Redirect Anycast switch |
+| **Compute Hydration RTO** | `< 180s` | **~15s** | Azure Container Instance (ACI) scale `0 ➔ 1` |
+| **RPO (Data Loss)** | `0 rows` | **~0.00 rows ($RPO = 0$)** | WAN Replication + PaySim Hash Parity |
+| **Standby Idle Cost** | Minimum | **~$0.00 / month** | Scale-to-zero serverless container pilot-light |
 | **Audit Compliance** | Instant | **Automated PDF** | SHA-256 signed SOC2 / ISO 27001 audit export |
 
 ---
