@@ -59,7 +59,7 @@ export default function OnboardingModal({ isOpen, onClose, onSuccess }) {
 
     setSecondaryAccount('NNFCDXY-SF_AZURE_DR');
     setSecondaryUser('YASHSNOW20');
-    setSecondaryPassword('Atlas20@200605');
+    setSecondaryPassword('AtlasDR@202605!');
     setSecondaryCloud('Azure');
     setSecondaryCloudRegion('eastus2');
     setSecondaryCloudAccessId('1fbaecf5-392d-4648-9f2e-4d694cfc0b83');

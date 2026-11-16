@@ -79,12 +79,19 @@ def get_onboarding_status() -> dict[str, Any]:
 def verify_onboarding_credentials(req: VerifyOnboardingRequest) -> dict[str, Any]:
     """Tests live connectivity to primary and secondary accounts before provisioning."""
     try:
+        key_path = Settings().snowflake_private_key_path
+        if not key_path or not Path(key_path).exists():
+            default_key = Path("C:/CSPM_PROJECT/rsa_key.p8")
+            if default_key.exists():
+                key_path = default_key
+
         p_cfg = AccountConfig(
             label="primary",
             identifier=req.primary_account.strip(),
             user=req.primary_user.strip(),
             role=req.primary_role.strip(),
             password=req.primary_password.strip(),
+            private_key_path=key_path,
         )
         s_cfg = AccountConfig(
             label="secondary",
@@ -92,6 +99,7 @@ def verify_onboarding_credentials(req: VerifyOnboardingRequest) -> dict[str, Any
             user=req.secondary_user.strip(),
             role=req.secondary_role.strip(),
             password=req.secondary_password.strip(),
+            private_key_path=key_path,
         )
         p_res = verify_account_connection(p_cfg)
         s_res = verify_account_connection(s_cfg)
@@ -121,12 +129,19 @@ def verify_onboarding_credentials(req: VerifyOnboardingRequest) -> dict[str, Any
 def provision_onboarding_pipeline(req: ProvisionOnboardingRequest) -> dict[str, Any]:
     """Zero-Touch 1-Click Multi-Cloud Provisioning: Warehouses, Failover Groups, Connections & WAN Sync."""
     try:
+        key_path = Settings().snowflake_private_key_path
+        if not key_path or not Path(key_path).exists():
+            default_key = Path("C:/CSPM_PROJECT/rsa_key.p8")
+            if default_key.exists():
+                key_path = default_key
+
         p_cfg = AccountConfig(
             label="primary",
             identifier=req.primary_account.strip(),
             user=req.primary_user.strip(),
             role=req.primary_role.strip(),
             password=req.primary_password.strip(),
+            private_key_path=key_path,
         )
         s_cfg = AccountConfig(
             label="secondary",
@@ -134,6 +149,7 @@ def provision_onboarding_pipeline(req: ProvisionOnboardingRequest) -> dict[str, 
             user=req.secondary_user.strip(),
             role=req.secondary_role.strip(),
             password=req.secondary_password.strip(),
+            private_key_path=key_path,
         )
         # Apply non-placeholder cloud credentials to environment before provisioning
         from ..discovery import _valid_cred

@@ -1,10 +1,10 @@
 {
   "runId": "RUN-004",
-  "workflow": "Manual Emergency Failover",
-  "title": "Manual Emergency Failover (AWS (AWC63551) \u2794 Azure (LQB72917))",
+  "workflow": "Reverse Delta Sync & Failback",
+  "title": "Reverse Delta Sync & Failback (Azure (LQB72917) \u2794 AWS (AWC63551))",
   "state": "success",
-  "elapsedS": 61.33,
+  "elapsedS": 153.36,
   "activeStepIdx": -1,
-  "summary": "Azure (LQB72917) is now real PRIMARY (Read-Write) and AWS (AWC63551) is Read-Only Replica! Measured Switchover RTO: 11.71s.",
+  "summary": "AWS (AWC63551) restored as authoritative PRIMARY and Azure (LQB72917) returned to Read-Only Standby Replica in 153.36s.",
   "error": null
 }

@@ -250,6 +250,7 @@ def provision_multi_cloud_dr(
                 AS COPY INTO {database_name}.DR_STAGING.FINANCIAL_TRANSACTIONS
                 FROM @{database_name}.DR_STAGING.CLOUD_DR_STAGE
                 FILE_FORMAT = (TYPE = 'JSON' STRIP_OUTER_ARRAY = TRUE)
+                MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
                 """)
             except Exception as e:
                 logger.debug("Pipe creation note: %s", e)

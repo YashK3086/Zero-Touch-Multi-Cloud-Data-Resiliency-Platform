@@ -1,6 +1,78 @@
 [
   {
     "id": "RUN-004",
+    "timestamp": "2026-11-16 13:47:51",
+    "operation": "Reverse Delta Sync & Failback",
+    "route": "Azure (LQB72917) \u2794 AWS (AWC63551)",
+    "duration": "153.36s (1.05s switch)",
+    "rows": "6,362,621 rows synced on AWS",
+    "rpo": "0 rows",
+    "operator": "Live SRE Console",
+    "audit": "Verified",
+    "status": "AWS PRIMARY"
+  },
+  {
+    "id": "RUN-003",
+    "timestamp": "2026-11-16 13:38:31",
+    "operation": "Manual Emergency Failover",
+    "route": "AWS (AWC63551) \u2794 Azure (LQB72917)",
+    "duration": "5.76s RTO (288.97s total)",
+    "rows": "6,362,620 rows active on Azure",
+    "rpo": "0 rows",
+    "operator": "Live SRE Console",
+    "audit": "Verified",
+    "status": "Azure PRIMARY"
+  },
+  {
+    "id": "RUN-002",
+    "timestamp": "2026-11-16 13:19:26",
+    "operation": "Reverse Delta Sync & Failback",
+    "route": "Azure (LQB72917) \u2794 AWS (AWC63551)",
+    "duration": "247.79s (1.07s switch)",
+    "rows": "6,362,620 rows synced on AWS",
+    "rpo": "0 rows",
+    "operator": "Live SRE Console",
+    "audit": "Verified",
+    "status": "AWS PRIMARY"
+  },
+  {
+    "id": "RUN-001",
+    "timestamp": "2026-11-16 13:15:10",
+    "operation": "Manual Emergency Failover",
+    "route": "AWS (AWC63551) \u2794 Azure (LQB72917)",
+    "duration": "4.56s RTO (303.61s total)",
+    "rows": "6,362,620 rows active on Azure",
+    "rpo": "0 rows",
+    "operator": "Live SRE Console",
+    "audit": "Verified",
+    "status": "Azure PRIMARY"
+  },
+  {
+    "id": "RUN-002",
+    "timestamp": "2026-11-16 06:37:32",
+    "operation": "Reverse Delta Sync & Failback",
+    "route": "Azure (LQB72917) \u2794 AWS (AWC63551)",
+    "duration": "61.87s (1.16s switch)",
+    "rows": "6,362,621 rows synced on AWS",
+    "rpo": "0 rows",
+    "operator": "Live SRE Console",
+    "audit": "Verified",
+    "status": "AWS PRIMARY"
+  },
+  {
+    "id": "RUN-001",
+    "timestamp": "2026-11-16 06:30:01",
+    "operation": "Manual Emergency Failover",
+    "route": "AWS (AWC63551) \u2794 Azure (LQB72917)",
+    "duration": "1.66s RTO (75.77s total)",
+    "rows": "6,362,620 rows active on Azure",
+    "rpo": "0 rows",
+    "operator": "Live SRE Console",
+    "audit": "Verified",
+    "status": "Azure PRIMARY"
+  },
+  {
+    "id": "RUN-004",
     "timestamp": "2026-11-10 05:07:00",
     "operation": "Manual Emergency Failover",
     "route": "AWS (AWC63551) \u2794 Azure (LQB72917)",
